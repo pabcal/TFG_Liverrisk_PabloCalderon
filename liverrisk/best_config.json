@@ -1,0 +1,26 @@
+{
+  "xgb_hyperparams": {
+    "n_estimators": 600,
+    "learning_rate": 0.025,
+    "max_depth": 2,
+    "min_child_weight": 10,
+    "subsample": 0.85,
+    "colsample_bytree": 0.85,
+    "reg_lambda": 5.0,
+    "reg_alpha": 0.5
+  },
+  "coxnet_alpha_search": {
+    "n_alphas": 30,
+    "n_splits": 3
+  },
+  "blend_weights_hep": [
+    0.0,
+    1.0,
+    0.0
+  ],
+  "blend_weights_death": [
+    0.4,
+    0.4,
+    0.2
+  ]
+}
