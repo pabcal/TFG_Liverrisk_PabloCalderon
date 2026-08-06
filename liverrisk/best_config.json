@@ -1,17 +1,31 @@
 {
-  "xgb_hyperparams": {
-    "n_estimators": 600,
+  "xgb_hyperparams_hep": {
     "learning_rate": 0.025,
-    "max_depth": 2,
-    "min_child_weight": 10,
-    "subsample": 0.85,
-    "colsample_bytree": 0.85,
+    "max_depth": 3,
+    "n_estimators": 300,
+    "min_child_weight": 5,
+    "subsample": 0.7,
+    "colsample_bytree": 0.7,
     "reg_lambda": 5.0,
+    "reg_alpha": 0.5
+  },
+  "xgb_hyperparams_death": {
+    "learning_rate": 0.1,
+    "max_depth": 2,
+    "n_estimators": 300,
+    "min_child_weight": 5,
+    "subsample": 0.7,
+    "colsample_bytree": 0.85,
+    "reg_lambda": 1.0,
     "reg_alpha": 0.5
   },
   "coxnet_alpha_search": {
     "n_alphas": 30,
     "n_splits": 3
+  },
+  "coxnet_hyperparams": {
+    "l1_ratio_hep": 0.1,
+    "l1_ratio_death": 0.99
   },
   "blend_weights_hep": [
     0.0,

@@ -2,15 +2,26 @@
 Model pipeline factories, moved verbatim from ANNITIA_baseline_local.ipynb
 sections 4.10-4.13: split_feature_types, make_preprocessor,
 make_coxnet_pipeline, fit_coxnet_with_alpha_cv, make_rsf_pipeline,
-signed_time_label, make_xgb_pipeline.
+signed_time_label, make_xgb_pipeline. Also home to the two hyperparameter
+searches 02_grid_search.ipynb runs: search_coxnet_l1_ratio and
+search_xgb_hyperparams.
 
-Behavior-preserving change: make_xgb_pipeline's XGBRegressor kwargs and
-fit_coxnet_with_alpha_cv's (n_alphas, n_splits) now come from
+fit_coxnet_with_alpha_cv's (n_alphas, n_splits) come from
 liverrisk.config by default instead of being hardcoded literals. Passing
 them explicitly (as 02_grid_search.ipynb must, per the requirement that
 grid search never reads config mid-search) reproduces the exact original
 defaults, since config falls back to those same literals when
 best_config.json doesn't exist yet -- see config.DEFAULTS.
+
+make_xgb_pipeline and make_coxnet_pipeline do NOT read config themselves.
+XGB hyperparameters and Coxnet l1_ratio are tuned per endpoint
+(config.xgb_hyperparams_hep()/_death(), config.coxnet_l1_ratio_hep()/
+_death()), and neither factory knows which endpoint it's being called
+for -- every caller (cv.py, scripts/train.py, this module's own search
+functions) must explicitly pass the right endpoint's values in. This
+replaced an earlier version where make_xgb_pipeline silently defaulted to
+a single shared config.xgb_hyperparams(), which made it easy to lose
+track of which endpoint a given fit actually used.
 """
 from __future__ import annotations
 
@@ -73,11 +84,18 @@ def make_preprocessor(X: pd.DataFrame, sparse_threshold: float = 0.3):
 # ---------------------------------------------------------------------
 # Coxnet
 # ---------------------------------------------------------------------
-def make_coxnet_pipeline(X: pd.DataFrame) -> Pipeline:
+def make_coxnet_pipeline(X: pd.DataFrame, l1_ratio: float = 0.9) -> Pipeline:
+    """
+    `l1_ratio` defaults to the original hardcoded value (0.9) so every
+    existing caller that doesn't pass it explicitly is unaffected.
+    search_coxnet_l1_ratio() sweeps this argument; nothing here reads
+    config.coxnet_l1_ratio_hep()/_death() automatically -- callers that
+    want the tuned value must pass it in themselves.
+    """
     return Pipeline([
         ("pre", make_preprocessor(X, sparse_threshold=0.3)),
         ("cox", CoxnetSurvivalAnalysis(
-            l1_ratio=0.9,
+            l1_ratio=l1_ratio,
             alpha_min_ratio=0.01,
             max_iter=20000,
             fit_baseline_model=True,
@@ -85,8 +103,46 @@ def make_coxnet_pipeline(X: pd.DataFrame) -> Pipeline:
     ])
 
 
+def search_coxnet_l1_ratio(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarray,
+                            l1_ratios: list[float] | None = None,
+                            n_repeats: int = 1) -> tuple[float, float, pd.DataFrame]:
+    """
+    Sweeps Coxnet's l1_ratio, scoring each candidate with cv_cindex_sksurv
+    (alpha itself is left alone -- fit_coxnet_with_alpha_cv already tunes
+    alpha per fit, and re-tuning it inside this search too would multiply
+    the cost for no benefit).
+
+    `time` is accepted but unused -- kept only so this search's call
+    signature matches search_xgb_hyperparams's (X, y, event, time), which
+    does need `time` (for signed_time_label) but not `y`.
+
+    Returns (best_l1_ratio, best_mean_cindex, results_df), sorted
+    best-first, same shape as search_blend_weights. Does not write
+    anywhere -- the caller (02_grid_search.ipynb) persists the winner via
+    config.update_config(coxnet_hyperparams=...).
+    """
+    del time
+
+    if l1_ratios is None:
+        l1_ratios = [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 0.99]
+
+    from liverrisk.cv import cv_cindex_sksurv  # local import: cv.py imports from this module, avoids a circular import
+
+    rows = []
+    for l1_ratio in l1_ratios:
+        factory = lambda X_fold, l1_ratio=l1_ratio: make_coxnet_pipeline(X_fold, l1_ratio=l1_ratio)
+        mean, std = cv_cindex_sksurv(factory, X, y, event, n_repeats=n_repeats)
+        rows.append({"l1_ratio": l1_ratio, "mean": mean, "std": std})
+
+    results_df = pd.DataFrame(rows).sort_values("mean", ascending=False).reset_index(drop=True)
+    best = results_df.iloc[0]
+
+    return float(best["l1_ratio"]), float(best["mean"]), results_df
+
+
 def fit_coxnet_with_alpha_cv(X: pd.DataFrame, y, random_state: int = RANDOM_STATE,
-                              n_alphas: int | None = None, n_splits: int | None = None) -> Pipeline:
+                              n_alphas: int | None = None, n_splits: int | None = None,
+                              l1_ratio: float = 0.9) -> Pipeline:
     """
     Like the baseline, first fit an alpha path, then select the best alpha.
     This usually works better than leaving the full path inside predict().
@@ -107,7 +163,7 @@ def fit_coxnet_with_alpha_cv(X: pd.DataFrame, y, random_state: int = RANDOM_STAT
         n_alphas = cfg["n_alphas"] if n_alphas is None else n_alphas
         n_splits = cfg["n_splits"] if n_splits is None else n_splits
 
-    path_model = make_coxnet_pipeline(X)
+    path_model = make_coxnet_pipeline(X, l1_ratio=l1_ratio)
     path_model.fit(X, y)
     alphas = path_model.named_steps["cox"].alphas_
 
@@ -123,7 +179,7 @@ def fit_coxnet_with_alpha_cv(X: pd.DataFrame, y, random_state: int = RANDOM_STAT
 
     grid = GridSearchCV(
         estimator=CoxnetSurvivalAnalysis(
-            l1_ratio=0.9,
+            l1_ratio=l1_ratio,
             max_iter=20000,
             fit_baseline_model=True,
         ),
@@ -170,20 +226,16 @@ def signed_time_label(event: np.ndarray, time: np.ndarray) -> np.ndarray:
 
 def make_xgb_pipeline(X: pd.DataFrame, **hyperparam_overrides) -> Pipeline:
     """
-    XGB hyperparameters come from config.xgb_hyperparams() by default (same
-    literal values as the original notebook's hardcoded XGBRegressor kwargs).
-
-    Pass explicit overrides (e.g. `make_xgb_pipeline(X, max_depth=3)`) to
-    try a different hyperparameter set WITHOUT touching best_config.json --
-    this is how a future XGB hyperparameter search in 02_grid_search.ipynb
-    should explore candidates; only write the winner back via
-    config.update_config() once the search is done.
+    Takes XGBRegressor kwargs only via `hyperparam_overrides` -- there is no
+    internal config fallback. Callers that want the tuned per-endpoint
+    values must pass them explicitly, e.g.
+    `make_xgb_pipeline(X_hep, **config.xgb_hyperparams_hep())`. Passing
+    nothing falls through to xgboost's own defaults, not the tuned ones --
+    this is deliberate, so it's never ambiguous which endpoint's
+    hyperparameters a given fit used.
     """
     if not HAS_XGB:
         raise ImportError("xgboost is not installed.")
-
-    params = config.xgb_hyperparams()
-    params.update(hyperparam_overrides)
 
     return Pipeline([
         ("pre", make_preprocessor(X, sparse_threshold=1.0)),
@@ -192,6 +244,76 @@ def make_xgb_pipeline(X: pd.DataFrame, **hyperparam_overrides) -> Pipeline:
             random_state=RANDOM_STATE,
             tree_method="hist",
             n_jobs=-1,
-            **params,
+            **hyperparam_overrides,
         )),
     ])
+
+
+def search_xgb_hyperparams(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarray,
+                            n_candidates: int = 12,
+                            random_state: int = RANDOM_STATE) -> tuple[dict, float, pd.DataFrame]:
+    """
+    Randomly samples `n_candidates` distinct combinations from a bounded
+    grid (learning_rate, max_depth, n_estimators, min_child_weight,
+    subsample, colsample_bytree, reg_lambda, reg_alpha) and scores each
+    with cv_cindex_xgb (n_repeats=1, to keep the search affordable -- same
+    trade-off search_blend_weights makes).
+
+    `y` is accepted but unused -- kept only so this search's call signature
+    matches search_coxnet_l1_ratio's (X, y, event, time), which needs `y`
+    but not `time`.
+
+    Returns (best_params, best_mean_cindex, results_df) where best_params
+    is the FULL 8-key dict (never a partial one) so it can be passed
+    straight to config.update_config(xgb_hyperparams_hep=...) /
+    (xgb_hyperparams_death=...) without a shallow-merge accidentally
+    dropping keys. Does not write anywhere itself.
+    """
+    del y
+
+    if not HAS_XGB:
+        raise ImportError("xgboost is not installed.")
+
+    from liverrisk.cv import cv_cindex_xgb  # local import: cv.py imports from this module, avoids a circular import
+
+    param_grid: dict[str, list] = {
+        "learning_rate": [0.01, 0.025, 0.05, 0.1],
+        "max_depth": [2, 3, 4],
+        "n_estimators": [300, 600, 900],
+        "min_child_weight": [5, 10, 20],
+        "subsample": [0.7, 0.85, 1.0],
+        "colsample_bytree": [0.7, 0.85, 1.0],
+        "reg_lambda": [1.0, 5.0, 10.0],
+        "reg_alpha": [0.0, 0.5, 1.0],
+    }
+    keys = list(param_grid.keys())
+
+    rng = np.random.RandomState(random_state)
+    seen: set[tuple] = set()
+    candidates: list[dict] = []
+    while len(candidates) < n_candidates:
+        candidate = {k: param_grid[k][rng.randint(len(param_grid[k]))] for k in keys}
+        sig = tuple(candidate[k] for k in keys)
+        if sig in seen:
+            continue
+        seen.add(sig)
+        candidates.append(candidate)
+
+    rows = []
+    best_params: dict | None = None
+    best_mean = -np.inf
+    for candidate in candidates:
+        mean, std = cv_cindex_xgb(X, event, time, n_repeats=1, xgb_params=candidate)
+        rows.append({**candidate, "mean": mean, "std": std})
+        if mean > best_mean:
+            best_mean = mean
+            best_params = candidate
+
+    # Track the winner from `candidates` directly (native Python int/float),
+    # rather than reading it back out of results_df -- a DataFrame row that
+    # mixes int columns (max_depth, n_estimators, ...) with float columns
+    # (mean, std, ...) upcasts everything to float64 on `.iloc[row]`, which
+    # would silently turn e.g. max_depth=3 into 3.0.
+    results_df = pd.DataFrame(rows).sort_values("mean", ascending=False).reset_index(drop=True)
+
+    return dict(best_params), float(best_mean), results_df

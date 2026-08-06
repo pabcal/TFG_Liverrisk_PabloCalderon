@@ -41,7 +41,8 @@ def blend_predictions(predictions: list[np.ndarray], weights: list[float] | None
 
 
 def search_blend_weights(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarray,
-                          n_points: int = 6) -> tuple[tuple[float, float, float], float, pd.DataFrame]:
+                          n_points: int = 6,
+                          xgb_params: dict | None = None) -> tuple[tuple[float, float, float], float, pd.DataFrame]:
     """
     Grid-search rank-blend weights (w_cox, w_rsf, w_xgb) that sum to 1,
     scoring each candidate with cv_cindex_blend.
@@ -55,6 +56,10 @@ def search_blend_weights(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarray
     These scores are for *ranking* candidates against each other; re-score
     the winning weights with more repeats separately for a trustworthy
     final number.
+
+    `xgb_params` is forwarded straight to cv_cindex_blend, which requires
+    it explicitly whenever xgboost is installed -- pass whichever
+    endpoint's config.xgb_hyperparams_hep()/_death() matches this `X`.
 
     Returns (best_weights, best_mean_cindex, results_df) where results_df
     has every candidate sorted best-first, for inspection. Does not write
@@ -87,6 +92,7 @@ def search_blend_weights(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarray
             n_repeats=1,
             weights=[w_cox, w_rsf, w_xgb],
             rsf_n_estimators=150,
+            xgb_params=xgb_params,
         )
         rows.append({"w_cox": w_cox, "w_rsf": w_rsf, "w_xgb": w_xgb, "mean": mean, "std": std})
 

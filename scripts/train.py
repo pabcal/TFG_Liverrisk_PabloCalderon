@@ -26,12 +26,11 @@ import pandas as pd
 
 from liverrisk import config
 from liverrisk.blend import blend_predictions
-from liverrisk.features import load_feature_columns, load_features, load_test_features
+from liverrisk.features import load_feature_columns, load_features, load_test_features, load_test_ids
 from liverrisk.models import HAS_XGB, fit_coxnet_with_alpha_cv, make_rsf_pipeline, make_xgb_pipeline, signed_time_label
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROCESSED_DIR = REPO_ROOT / "liverrisk" / "data" / "processed"
-RAW_TEST_PATH = REPO_ROOT / "liverrisk" / "data" / "raw" / "test.csv"
 MODELS_DIR = REPO_ROOT / "models"
 OUTPUT_PATH = REPO_ROOT / "outputs" / "improved_submission.csv"
 
@@ -61,8 +60,8 @@ def train_final_models(processed_dir: str | Path = PROCESSED_DIR, verbose: bool 
     log(f"Blend weights (w_cox, w_rsf, w_xgb) -- hepatic={blend_weights_hep}, death={blend_weights_death}")
 
     log("Fitting Coxnet (alpha CV)...")
-    cox_hep = fit_coxnet_with_alpha_cv(X_hep, y_hep)
-    cox_death = fit_coxnet_with_alpha_cv(X_death, y_death)
+    cox_hep = fit_coxnet_with_alpha_cv(X_hep, y_hep, l1_ratio=config.coxnet_l1_ratio_hep())
+    cox_death = fit_coxnet_with_alpha_cv(X_death, y_death, l1_ratio=config.coxnet_l1_ratio_death())
 
     log("Fitting RSF (500 trees)...")
     rsf_hep = make_rsf_pipeline(X_hep)
@@ -86,9 +85,9 @@ def train_final_models(processed_dir: str | Path = PROCESSED_DIR, verbose: bool 
 
     if HAS_XGB:
         log("Fitting XGB (survival:cox)...")
-        xgb_hep = make_xgb_pipeline(X_hep)
+        xgb_hep = make_xgb_pipeline(X_hep, **config.xgb_hyperparams_hep())
         xgb_hep.fit(X_hep, signed_time_label(hep_event, hep_time))
-        xgb_death = make_xgb_pipeline(X_death)
+        xgb_death = make_xgb_pipeline(X_death, **config.xgb_hyperparams_death())
         xgb_death.fit(X_death, signed_time_label(death_event, death_time))
 
         models["xgb_hep"] = xgb_hep
@@ -143,12 +142,21 @@ def save_models(result: dict, models_dir: str | Path = MODELS_DIR, processed_dir
         shutil.copy(feature_columns_src, models_dir / "feature_columns.json")
 
 
-def build_submission(result: dict, id_values, id_col_name: str, output_path: str | Path = OUTPUT_PATH) -> pd.DataFrame:
+def build_submission(result: dict, processed_dir: str | Path = PROCESSED_DIR, output_path: str | Path = OUTPUT_PATH) -> pd.DataFrame:
+    """
+    Loads the test-set id column from `processed_dir/test_ids.json` (written
+    by 01_data_exploration's save_test_ids(), in the same row order as
+    test_X.parquet) rather than re-reading raw test.csv, which could drift
+    out of row-order sync with `result["pred_hep"]`/`pred_death"]` if the
+    raw file or the feature-building pipeline ever reorders rows.
+    """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    ids, id_col_name = load_test_ids(processed_dir)
+
     submission = pd.DataFrame({
-        id_col_name: id_values,
+        id_col_name: ids,
         "risk_hepatic_event": result["pred_hep"],
         "risk_death": result["pred_death"],
     })
@@ -165,19 +173,12 @@ def main() -> None:
     parser.add_argument("--processed-dir", default=str(PROCESSED_DIR))
     parser.add_argument("--models-dir", default=str(MODELS_DIR))
     parser.add_argument("--output", default=str(OUTPUT_PATH))
-    parser.add_argument(
-        "--raw-test", default=str(RAW_TEST_PATH),
-        help="Raw test.csv, used only to pull the id column (trustii_id) for the submission -- "
-             "row order must match the processed test features written by 01_data_exploration.",
-    )
     args = parser.parse_args()
 
     result = train_final_models(processed_dir=args.processed_dir)
     save_models(result, models_dir=args.models_dir, processed_dir=args.processed_dir)
 
-    test_raw = pd.read_csv(args.raw_test)
-    id_col = "trustii_id" if "trustii_id" in test_raw.columns else "patient_id_anon"
-    submission = build_submission(result, test_raw[id_col].values, id_col, output_path=args.output)
+    submission = build_submission(result, processed_dir=args.processed_dir, output_path=args.output)
 
     print(f"Saved {len(submission)} predictions -> {args.output}")
     print(submission.head())

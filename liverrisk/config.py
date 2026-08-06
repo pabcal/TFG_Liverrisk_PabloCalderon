@@ -1,13 +1,22 @@
 """
-Single source of truth for tuned values (XGB hyperparameters, Coxnet alpha
-search settings, per-endpoint blend weights).
+Single source of truth for tuned values (per-endpoint XGB hyperparameters,
+per-endpoint Coxnet l1_ratio, Coxnet alpha search settings, per-endpoint
+blend weights).
 
 Loads liverrisk/best_config.json once at import time. If the file is
 missing, falls back to DEFAULTS -- the values that were hardcoded directly
 in the original notebook (make_xgb_pipeline's XGBRegressor kwargs,
-fit_coxnet_with_alpha_cv's n_alphas/n_splits, and the pre-tuning
-OLD_BLEND_WEIGHTS = (0.45, 0.25, 0.30) used for both endpoints) -- so the
-package works before 02_grid_search.ipynb has ever been run.
+make_coxnet_pipeline's l1_ratio, fit_coxnet_with_alpha_cv's
+n_alphas/n_splits, and the pre-tuning OLD_BLEND_WEIGHTS = (0.45, 0.25,
+0.30) used for both endpoints) -- so the package works before
+02_grid_search.ipynb has ever been run.
+
+XGB hyperparameters and Coxnet l1_ratio are stored per endpoint
+(xgb_hyperparams_hep/_death, coxnet_hyperparams's l1_ratio_hep/_death) --
+there is deliberately no shared/unsplit fallback key for either. Every
+caller that builds an XGB or l1_ratio-tuned Coxnet model must explicitly
+pick the hep or death reader; make_xgb_pipeline/make_coxnet_pipeline never
+guess which endpoint they're being used for.
 
 02_grid_search.ipynb is the only notebook that calls save_config() /
 update_config(); everything else (models.py, cv.py, 03_train_final,
@@ -22,7 +31,21 @@ from typing import Any
 CONFIG_PATH = Path(__file__).resolve().parent / "best_config.json"
 
 DEFAULTS: dict[str, Any] = {
-    "xgb_hyperparams": {
+    # Identical starting values for both endpoints -- until
+    # search_xgb_hyperparams() (see models.py) overwrites one or both via
+    # 02_grid_search.ipynb, hep and death use the same original hardcoded
+    # XGBRegressor kwargs.
+    "xgb_hyperparams_hep": {
+        "n_estimators": 600,
+        "learning_rate": 0.025,
+        "max_depth": 2,
+        "min_child_weight": 10,
+        "subsample": 0.85,
+        "colsample_bytree": 0.85,
+        "reg_lambda": 5.0,
+        "reg_alpha": 0.5,
+    },
+    "xgb_hyperparams_death": {
         "n_estimators": 600,
         "learning_rate": 0.025,
         "max_depth": 2,
@@ -35,6 +58,13 @@ DEFAULTS: dict[str, Any] = {
     "coxnet_alpha_search": {
         "n_alphas": 30,
         "n_splits": 3,
+    },
+    # l1_ratio=0.9 is make_coxnet_pipeline's original hardcoded default,
+    # for both endpoints, until search_coxnet_l1_ratio() overwrites one or
+    # both.
+    "coxnet_hyperparams": {
+        "l1_ratio_hep": 0.9,
+        "l1_ratio_death": 0.9,
     },
     # Pre-tuning weights, applied uniformly to both endpoints in the
     # original notebook. search_blend_weights() (see blend.py) replaces
@@ -93,12 +123,24 @@ def update_config(**kwargs: Any) -> dict[str, Any]:
     return reload_config()
 
 
-def xgb_hyperparams() -> dict[str, Any]:
-    return dict(_config["xgb_hyperparams"])
+def xgb_hyperparams_hep() -> dict[str, Any]:
+    return dict(_config["xgb_hyperparams_hep"])
+
+
+def xgb_hyperparams_death() -> dict[str, Any]:
+    return dict(_config["xgb_hyperparams_death"])
 
 
 def coxnet_alpha_search() -> dict[str, Any]:
     return dict(_config["coxnet_alpha_search"])
+
+
+def coxnet_l1_ratio_hep() -> float:
+    return float(_config["coxnet_hyperparams"]["l1_ratio_hep"])
+
+
+def coxnet_l1_ratio_death() -> float:
+    return float(_config["coxnet_hyperparams"]["l1_ratio_death"])
 
 
 def blend_weights_hep() -> list[float]:

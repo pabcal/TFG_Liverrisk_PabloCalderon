@@ -399,3 +399,27 @@ def save_test_features(X_test: pd.DataFrame, path: str | Path) -> None:
 def load_test_features(path: str | Path) -> pd.DataFrame:
     path = Path(path)
     return pd.read_parquet(path / "test_X.parquet")
+
+
+def save_test_ids(test_df: pd.DataFrame, path: str | Path) -> None:
+    """
+    Save the test set's id column (`trustii_id` if present, else
+    `patient_id_anon`) to `path/test_ids.json`, in the same row order as
+    `save_test_features`'s `test_X.parquet` -- `test_df` must be the same
+    (unfiltered, unreordered) frame passed to `build_patient_features()`.
+    """
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+
+    id_col = "trustii_id" if "trustii_id" in test_df.columns else "patient_id_anon"
+
+    with open(path / "test_ids.json", "w") as f:
+        json.dump({"id_col": id_col, "ids": test_df[id_col].tolist()}, f, indent=2)
+
+
+def load_test_ids(path: str | Path) -> tuple[list, str]:
+    """Inverse of save_test_ids(). Returns (ids, id_col_name)."""
+    path = Path(path)
+    with open(path / "test_ids.json") as f:
+        payload = json.load(f)
+    return payload["ids"], payload["id_col"]
