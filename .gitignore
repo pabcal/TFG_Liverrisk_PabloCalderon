@@ -3,5 +3,4 @@ __pycache__/
 *.pyc
 liverrisk/data/processed/
 models/
-outputs/
 .ipynb_checkpoints/
