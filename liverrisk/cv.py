@@ -171,3 +171,95 @@ def cv_cindex_blend(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarray,
         scores.append(concordance_index_censored(y[event_name][va], y[time_name][va], blended)[0])
 
     return float(np.mean(scores)), float(np.std(scores))
+
+
+def cv_cindex_formula(X: pd.DataFrame, y, event: np.ndarray, score_array: np.ndarray,
+                       n_splits: int = 5, n_repeats: int = 3) -> tuple[float, float]:
+    """
+    Fold-honest score for a fixed clinical-score formula (FIB-4, APRI, ...),
+    for Study 1's formula-vs-ML comparison.
+
+    Same RepeatedStratifiedKFold(n_splits, n_repeats, random_state=
+    RANDOM_STATE) split as cv_cindex_sksurv, so the folds line up exactly
+    with the ML models' folds -- but there's nothing to fit per fold: a
+    formula's value for a given patient doesn't depend on which other
+    patients are in the training fold, so this just slices
+    `score_array[va]` (the already-computed fib4_score/apri_score column,
+    aligned positionally with X) and scores it directly.
+
+    `score_array` can contain NaN (FIB-4/APRI are undefined for patients
+    missing AST/ALT/platelets) -- within each validation fold, NaN-scored
+    patients are dropped before scoring, since concordance_index_censored
+    can't rank an undefined estimate. Folds themselves are still drawn from
+    the full cohort (matching the ML models' folds); only the *scoring*
+    step per fold is restricted to patients with a defined formula value.
+    """
+    cv = RepeatedStratifiedKFold(
+        n_splits=n_splits,
+        n_repeats=n_repeats,
+        random_state=RANDOM_STATE,
+    )
+
+    event_name, time_name = y.dtype.names
+    score_array = np.asarray(score_array)
+    scores = []
+
+    for _, va in cv.split(X, event.astype(int)):
+        valid = va[np.isfinite(score_array[va])]
+        scores.append(concordance_index_censored(y[event_name][valid], y[time_name][valid], score_array[valid])[0])
+
+    return float(np.mean(scores)), float(np.std(scores))
+
+
+def bootstrap_cindex_diff(y, event: np.ndarray, time: np.ndarray,
+                           score_a: np.ndarray, score_b: np.ndarray,
+                           n_boot: int = 1000, random_state: int = RANDOM_STATE) -> tuple[np.ndarray, float, float]:
+    """
+    Bootstrap the difference in C-index between two fixed score arrays
+    (e.g. the ML blend vs. a clinical formula) on the same cohort.
+
+    Resamples patient indices with replacement `n_boot` times; for each
+    resample, scores both `score_a` and `score_b` with
+    concordance_index_censored and records (c_index_a - c_index_b). A
+    resample is skipped (not counted towards `n_boot`) if it has zero
+    events, since concordance_index_censored requires at least one -- this
+    is rare given 47/76 events across ~1250 patients but not impossible.
+
+    `score_a`/`score_b` can contain NaN (e.g. a clinical formula that's
+    undefined for patients missing labs) -- same handling as
+    cv_cindex_formula: within each resample, indices where either score is
+    NaN are dropped before scoring, using one shared mask so score_a and
+    score_b are scored on the exact same patients (a paired comparison
+    needs matched subsets, not independently-filtered ones). A resample is
+    also skipped if fewer than 2 patients or zero events remain after
+    dropping NaNs.
+
+    Returns (diffs, ci_lower, ci_upper) where `diffs` is the array of
+    per-resample differences and (ci_lower, ci_upper) is its (2.5th,
+    97.5th) percentile -- if this interval excludes zero, the gap between
+    score_a and score_b is unlikely to be noise.
+    """
+    event = np.asarray(event)
+    time = np.asarray(time)
+    score_a = np.asarray(score_a)
+    score_b = np.asarray(score_b)
+    n = len(event)
+
+    rng = np.random.RandomState(random_state)
+    diffs = []
+
+    while len(diffs) < n_boot:
+        idx = rng.randint(0, n, size=n)
+
+        valid = idx[np.isfinite(score_a[idx]) & np.isfinite(score_b[idx])]
+        if len(valid) < 2 or event[valid].sum() == 0:
+            continue
+
+        c_a = concordance_index_censored(event[valid], time[valid], score_a[valid])[0]
+        c_b = concordance_index_censored(event[valid], time[valid], score_b[valid])[0]
+        diffs.append(c_a - c_b)
+
+    diffs = np.asarray(diffs)
+    ci_lower, ci_upper = np.percentile(diffs, [2.5, 97.5])
+
+    return diffs, float(ci_lower), float(ci_upper)

@@ -52,3 +52,30 @@ def apri(ast, plt, ast_uln: float = 40.0):
     derived from this cohort's data.
     """
     return _safe_div(_safe_div(ast, ast_uln) * 100.0, plt)
+
+
+def compute_fib4_apri(X: pd.DataFrame, name: str) -> pd.DataFrame:
+    """
+    Study 1 (formula-vs-ML comparison): scores every row of an already
+    built patient-feature frame (X_hep or X_death, from
+    build_patient_features()/load_features()) with FIB-4 and APRI, using
+    the same "last observed" labs build_patient_features() already
+    computes fib4_last from: age_last_observed, ast__last, alt__last,
+    plt__last.
+
+    `name` is unused by the computation itself -- kept only so call sites
+    read as `compute_fib4_apri(X_hep, "hep")` / `compute_fib4_apri(X_death,
+    "death")`, matching load_features's `name` argument, for symmetry with
+    the rest of the pipeline's per-endpoint calls.
+    """
+    del name
+
+    required = {"age_last_observed", "ast__last", "alt__last", "plt__last"}
+    missing = required - set(X.columns)
+    if missing:
+        raise ValueError(f"compute_fib4_apri: X is missing required columns {sorted(missing)}")
+
+    return pd.DataFrame({
+        "fib4_score": fib4(X["age_last_observed"], X["ast__last"], X["plt__last"], X["alt__last"]),
+        "apri_score": apri(X["ast__last"], X["plt__last"]),
+    }, index=X.index)
