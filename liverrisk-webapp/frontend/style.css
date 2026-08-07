@@ -1,0 +1,188 @@
+/* Basic page setup. Using relative units (rem) instead of fixed pixels
+   so the layout scales with the user's font settings and screen size. */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: linear-gradient(180deg, #eef3f1 0%, #e4ece8 100%);
+    color: #1f2a24;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+}
+
+/* The main content area. max-width + width:100% means it shrinks to
+   fit small screens but never stretches too wide on a desktop monitor. */
+.page {
+    max-width: 40rem;
+    width: 100%;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem;
+    box-sizing: border-box;
+    display: flex;
+    justify-content: center;
+}
+
+/* Everything lives inside a single card, which gives the page a clear
+   focal point instead of text floating on a plain background. */
+.card {
+    background-color: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08);
+    padding: 2rem;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.logo {
+    font-size: 1.6rem;
+    line-height: 1;
+}
+
+h1 {
+    font-size: 1.6rem;
+    margin: 0;
+    color: #16382a;
+}
+
+.intro {
+    color: #4d5c54;
+    line-height: 1.5;
+}
+
+/* Stack the form fields vertically with flexbox, wrapping is not even
+   needed here since it's already a column -- this is the simplest
+   layout that also behaves well on narrow screens. */
+#upload-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin: 1.5rem 0;
+}
+
+label {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #2c3b32;
+}
+
+/* Hide the ugly native file input and present a styled label instead,
+   while keeping the real <input> functional and accessible. */
+.file-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    border: 1.5px dashed #b7c9bd;
+    border-radius: 8px;
+    background-color: #f7faf8;
+    padding: 0.75rem 1rem;
+    min-height: 44px;
+    box-sizing: border-box;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.file-row:hover {
+    border-color: #2f6f4f;
+    background-color: #f0f6f2;
+}
+
+input[type="file"] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.file-name {
+    font-size: 0.9rem;
+    color: #6b7a70;
+    pointer-events: none;
+}
+
+.file-name.chosen {
+    color: #1f2a24;
+    font-weight: 500;
+}
+
+button {
+    min-height: 44px;
+    font-size: 1rem;
+    font-weight: 600;
+    background-color: #2f6f4f;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, transform 0.05s ease;
+}
+
+button:hover {
+    background-color: #255a3f;
+}
+
+button:active {
+    transform: scale(0.99);
+}
+
+button:disabled {
+    background-color: #a8b5ae;
+    cursor: not-allowed;
+}
+
+#status-message {
+    font-size: 0.9rem;
+    min-height: 1.2em;
+}
+
+#status-message.status-error {
+    color: #b3261e;
+    font-weight: 600;
+}
+
+#status-message.status-success {
+    color: #2f6f4f;
+    font-weight: 600;
+}
+
+#status-message:empty {
+    margin: 0;
+}
+
+/* The result box can contain a long line of JSON text. overflow-x:auto
+   lets that one box scroll sideways instead of the whole page. */
+#result-box {
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    padding: 1rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.85rem;
+}
+
+#result-box:empty {
+    display: none;
+}
+
+/* On narrow (phone-width) screens, give the page a little less side
+   padding so text has more room. */
+@media (max-width: 600px) {
+    .page {
+        padding: 1rem;
+    }
+
+    .card {
+        padding: 1.25rem;
+    }
+
+    h1 {
+        font-size: 1.3rem;
+    }
+}

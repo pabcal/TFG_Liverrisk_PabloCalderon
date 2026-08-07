@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- This makes the page render at a sensible size on phones instead of zoomed-out desktop size -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiverRisk</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <main class="page">
+        <div class="card">
+            <div class="card-header">
+                <span class="logo">🩺</span>
+                <h1>LiverRisk prediction</h1>
+            </div>
+            <p class="intro">
+                Upload a CSV file with the same columns as train.csv / test.csv,
+                for one patient or a few patients, to get a risk prediction.
+            </p>
+
+            <!-- File upload form. We don't actually submit this form the normal
+                 way (that would reload the page) -- JavaScript intercepts the
+                 click on the button instead. -->
+            <form id="upload-form">
+                <label for="csv-file">Patient CSV file</label>
+                <div class="file-row">
+                    <input type="file" id="csv-file" name="file" accept=".csv" required>
+                    <span id="file-name" class="file-name">No file chosen</span>
+                </div>
+
+                <button type="submit" id="predict-button">Predict</button>
+            </form>
+
+            <!-- Simple status line: shows "Loading..." or an error message -->
+            <p id="status-message"></p>
+
+            <!-- Where we print the raw JSON response from the backend -->
+            <pre id="result-box"></pre>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
