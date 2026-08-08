@@ -1,3 +1,6 @@
+/* ====================================================================
+   SECTION: Base page setup
+   ==================================================================== */
 /* Basic page setup. Using relative units (rem) instead of fixed pixels
    so the layout scales with the user's font settings and screen size. */
 body {
@@ -21,6 +24,54 @@ body {
     justify-content: center;
 }
 
+/* Wraps the tabs + both panels so .page can center it as one block */
+.page-inner {
+    width: 100%;
+}
+
+
+/* ====================================================================
+   SECTION: Tab switcher
+   ==================================================================== */
+.tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.tab-button {
+    flex: 1; /* both buttons share the row equally */
+    min-height: 44px; /* comfortable tap target on mobile */
+    font-size: 0.95rem;
+    font-weight: 600;
+    background-color: rgba(255, 255, 255, 0.6);
+    color: #4d5c54;
+    border: 1.5px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.tab-button:hover {
+    background-color: rgba(255, 255, 255, 0.85);
+}
+
+/* Applied by script.js to whichever tab is currently selected */
+.tab-button.active {
+    background-color: #ffffff;
+    color: #16382a;
+    border-color: #2f6f4f;
+}
+
+/* Applied by script.js to whichever panel is NOT currently selected */
+.tab-panel.hidden {
+    display: none;
+}
+
+
+/* ====================================================================
+   SECTION: Card shell (shared by both tab panels)
+   ==================================================================== */
 /* Everything lives inside a single card, which gives the page a clear
    focal point instead of text floating on a plain background. */
 .card {
@@ -54,6 +105,10 @@ h1 {
     line-height: 1.5;
 }
 
+
+/* ====================================================================
+   SECTION: "Predict" tab -- upload form
+   ==================================================================== */
 /* Stack the form fields vertically with flexbox, wrapping is not even
    needed here since it's already a column -- this is the simplest
    layout that also behaves well on narrow screens. */
@@ -80,7 +135,7 @@ label {
     border-radius: 8px;
     background-color: #f7faf8;
     padding: 0.75rem 1rem;
-    min-height: 44px;
+    min-height: 44px; /* comfortable tap target on mobile */
     box-sizing: border-box;
     transition: border-color 0.15s ease, background-color 0.15s ease;
 }
@@ -90,6 +145,9 @@ label {
     background-color: #f0f6f2;
 }
 
+/* The real <input type="file">: invisible but stretched over the
+   whole .file-row, so clicking anywhere in the styled box opens the
+   native file picker. */
 input[type="file"] {
     position: absolute;
     inset: 0;
@@ -99,19 +157,25 @@ input[type="file"] {
     cursor: pointer;
 }
 
+/* The fake "chosen file" text drawn on top of the invisible input */
 .file-name {
     font-size: 0.9rem;
     color: #6b7a70;
-    pointer-events: none;
+    pointer-events: none; /* clicks pass through to the real input underneath */
 }
 
+/* Applied once a file has actually been chosen, to make the label read as filled in */
 .file-name.chosen {
     color: #1f2a24;
     font-weight: 500;
 }
 
+
+/* ====================================================================
+   SECTION: Buttons (shared)
+   ==================================================================== */
 button {
-    min-height: 44px;
+    min-height: 44px; /* comfortable tap target on mobile */
     font-size: 1rem;
     font-weight: 600;
     background-color: #2f6f4f;
@@ -127,7 +191,7 @@ button:hover {
 }
 
 button:active {
-    transform: scale(0.99);
+    transform: scale(0.99); /* slight "press" feedback */
 }
 
 button:disabled {
@@ -135,9 +199,13 @@ button:disabled {
     cursor: not-allowed;
 }
 
+
+/* ====================================================================
+   SECTION: "Predict" tab -- status line & result box
+   ==================================================================== */
 #status-message {
     font-size: 0.9rem;
-    min-height: 1.2em;
+    min-height: 1.2em; /* reserves space so the layout doesn't jump when text appears */
 }
 
 #status-message.status-error {
@@ -151,7 +219,7 @@ button:disabled {
 }
 
 #status-message:empty {
-    margin: 0;
+    margin: 0; /* no wasted margin before any status text has been set */
 }
 
 /* The result box can contain a long line of JSON text. overflow-x:auto
@@ -168,11 +236,126 @@ button:disabled {
 }
 
 #result-box:empty {
-    display: none;
+    display: none; /* no empty black box before a prediction has run */
 }
 
-/* On narrow (phone-width) screens, give the page a little less side
-   padding so text has more room. */
+
+/* ====================================================================
+   SECTION: "Build a test CSV" tab
+   ==================================================================== */
+#sample-status {
+    font-size: 0.9rem;
+    min-height: 1.2em; /* reserves space so the layout doesn't jump when text appears */
+}
+
+#sample-status.status-error {
+    color: #b3261e;
+    font-weight: 600;
+}
+
+/* Patient cards. One column by default (works on any width); this is
+   an intentional single-column layout on phones too, so cards never
+   get cramped side by side -- see requirement in the media query
+   section below, which only tweaks font sizes, not the column count. */
+.patient-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin: 1rem 0 1.5rem;
+}
+
+.patient-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+    border: 1.5px solid #dbe5df;
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    background-color: #f7faf8;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+/* Highlights the whole card while its checkbox is checked */
+.patient-card:has(.patient-checkbox:checked) {
+    border-color: #2f6f4f;
+    background-color: #eef6f1;
+}
+
+/* Checkbox itself is small, but its clickable area (the whole label)
+   is much bigger than 44px, and we still size the box generously for
+   anyone tapping precisely on it. */
+.patient-checkbox {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    margin-top: 0.15rem; /* nudge down to align with the first line of text */
+    accent-color: #2f6f4f;
+    cursor: pointer;
+}
+
+.patient-info {
+    flex: 1; /* takes up remaining width next to the checkbox */
+}
+
+.patient-title {
+    font-weight: 700;
+    color: #16382a;
+    margin-bottom: 0.2rem;
+}
+
+.patient-summary {
+    font-size: 0.85rem;
+    color: #4d5c54;
+    line-height: 1.5;
+}
+
+.csv-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 0.5rem;
+}
+
+.csv-preview-header h2 {
+    font-size: 1.05rem;
+    margin: 0;
+    color: #16382a;
+}
+
+.csv-preview-header button {
+    padding: 0 1.25rem;
+    white-space: nowrap; /* keep "Download CSV" on one line */
+}
+
+.hint {
+    font-size: 0.85rem;
+    color: #6b7a70;
+    margin: 0.4rem 0;
+}
+
+/* Scrollable in both directions: overflow-x for long lines, the fixed
+   rows + native textarea overflow-y for many selected rows. */
+.csv-preview {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.8rem;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    border: none;
+    border-radius: 8px;
+    padding: 1rem;
+    resize: vertical; /* user can drag it taller if many patients are selected */
+    overflow: auto;
+    white-space: pre; /* preserve the CSV's exact line breaks/spacing */
+}
+
+
+/* ====================================================================
+   SECTION: Responsive tweaks (narrow / phone-width screens)
+   ==================================================================== */
 @media (max-width: 600px) {
     .page {
         padding: 1rem;
@@ -184,5 +367,16 @@ button:disabled {
 
     h1 {
         font-size: 1.3rem;
+    }
+
+    .tab-button {
+        font-size: 0.85rem;
+    }
+
+    /* Stack the "CSV preview" heading and the download button instead
+       of squeezing them onto one row */
+    .csv-preview-header {
+        flex-direction: column;
+        align-items: stretch;
     }
 }

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -46,6 +47,7 @@ from fastapi.staticfiles import StaticFiles
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from liverrisk.clinical_scores import fib4  # noqa: E402
 from liverrisk.features import (  # noqa: E402
     REPEATED_BASES,
     STATIC_CAT,
@@ -56,6 +58,7 @@ from liverrisk.features import (  # noqa: E402
 
 MODELS_DIR = REPO_ROOT / "models"
 PROCESSED_DIR = REPO_ROOT / "liverrisk" / "data" / "processed"
+RAW_TEST_PATH = REPO_ROOT / "liverrisk" / "data" / "raw" / "test.csv"
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 app = FastAPI(title="LiverRisk webapp")
@@ -227,6 +230,116 @@ async def predict(file: UploadFile = File(...)):
         })
 
     return results
+
+
+# --------------------------------------------------------------------
+# "Build a test CSV" tab support: lets a user assemble a small CSV out
+# of a handful of real (unlabeled) test-set patients, without needing
+# their own data, to try out /predict above.
+# --------------------------------------------------------------------
+TEST_COLUMNS = pd.read_csv(RAW_TEST_PATH, nrows=0).columns.tolist()
+
+# The three "NIT" (non-invasive test) repeated measures in the dataset,
+# in the same order they appear as REPEATED_BASES entries in features.py.
+NIT_BASES = ["fibrotest_BM_2", "aixp_aix_result_BM_3", "fibs_stiffness_med_BM_1"]
+NIT_LABELS = {
+    "fibrotest_BM_2": "FibroTest",
+    "aixp_aix_result_BM_3": "AIx-P",
+    "fibs_stiffness_med_BM_1": "Liver stiffness (FibroScan)",
+}
+
+
+def _visit_columns(columns: list[str], base: str) -> list[str]:
+    """All `{base}_v<n>` columns for one repeated measure, e.g. all fibrotest_BM_2_v* columns."""
+    return [c for c in columns if re.fullmatch(fr"{re.escape(base)}_v\d+", c)]
+
+
+AGE_COLUMNS = _visit_columns(TEST_COLUMNS, "Age")
+NIT_COLUMNS = {base: _visit_columns(TEST_COLUMNS, base) for base in NIT_BASES}
+
+
+def select_sample_patients(raw_df: pd.DataFrame, n: int = 10) -> pd.DataFrame:
+    """
+    Picks `n` patients out of the full (unlabeled) test set for the
+    "Build a test CSV" tab, aiming for variety rather than just the
+    first n rows: patients are ranked by (number of recorded visits,
+    baseline FIB-4), then n picks are taken evenly spaced across that
+    ranking so the sample spans low-to-high visit counts and FIB-4
+    levels instead of clustering at one end.
+    """
+    visit_counts = raw_df[AGE_COLUMNS].notna().sum(axis=1)
+    baseline_fib4 = fib4(raw_df["Age_v1"], raw_df["ast_v1"], raw_df["plt_v1"], raw_df["alt_v1"])
+
+    ranking = pd.DataFrame({
+        "visits": visit_counts,
+        # Patients with no computable baseline FIB-4 sort first, so they
+        # don't crowd out patients that do have a baseline value.
+        "fib4": baseline_fib4.fillna(-1),
+    }).sort_values(["visits", "fib4"])
+
+    sorted_positions = np.arange(len(ranking))
+    pick_positions = np.unique(np.linspace(0, len(sorted_positions) - 1, num=n).round().astype(int))
+
+    # Rounding can collapse two target spots onto the same row for a
+    # small n; top up with the next not-yet-picked rows so we still
+    # return exactly n patients.
+    pick_positions = set(pick_positions.tolist())
+    for pos in range(len(sorted_positions)):
+        if len(pick_positions) >= n:
+            break
+        pick_positions.add(pos)
+
+    chosen_idx = ranking.index[sorted(pick_positions)[:n]]
+    return raw_df.loc[chosen_idx]
+
+
+def _json_safe(value):
+    """Turns a pandas/numpy scalar into something json-serializable, with NaN/NaT becoming None."""
+    if pd.isna(value):
+        return None
+    if hasattr(value, "item"):
+        return value.item()
+    return value
+
+
+@app.get("/sample-patients")
+async def sample_patients():
+    """
+    Returns 10 pre-selected patients from the real (unlabeled) test set,
+    each with every raw column (so the frontend can reconstruct a valid
+    test.csv row later) plus a few human-readable summary fields for
+    display in the "Build a test CSV" tab.
+    """
+    raw_df = pd.read_csv(RAW_TEST_PATH)
+    sample_df = select_sample_patients(raw_df, n=10)
+
+    patients = []
+    for _, row in sample_df.iterrows():
+        visit_count = int(row[AGE_COLUMNS].notna().sum())
+
+        baseline_fib4 = fib4(row["Age_v1"], row["ast_v1"], row["plt_v1"], row["alt_v1"])
+        baseline_fib4 = None if pd.isna(baseline_fib4) else round(float(baseline_fib4), 2)
+
+        # Whichever of the three NIT/lab measures has the most recorded
+        # (non-null) visits for this particular patient.
+        nit_counts = {base: int(row[cols].notna().sum()) for base, cols in NIT_COLUMNS.items()}
+        most_complete_base = max(nit_counts, key=nit_counts.get)
+
+        raw_values = {col: _json_safe(row[col]) for col in TEST_COLUMNS}
+
+        patients.append({
+            "trustii_id": raw_values["trustii_id"],
+            "summary": {
+                "age_at_baseline": raw_values["Age_v1"],
+                "visit_count": visit_count,
+                "baseline_fib4": baseline_fib4,
+                "most_complete_nit": NIT_LABELS[most_complete_base],
+                "most_complete_nit_visits": nit_counts[most_complete_base],
+            },
+            "raw": raw_values,
+        })
+
+    return {"columns": TEST_COLUMNS, "patients": patients}
 
 
 # --------------------------------------------------------------------
