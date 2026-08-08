@@ -10,17 +10,17 @@
 </head>
 <body>
 
-    <main class="page">
-        <div class="page-inner">
-
-            <!-- ============================================================
-                 SECTION: Tab switcher
-                 Two buttons, one per panel below. script.js toggles the
-                 "active"/"hidden" classes on click -- both panels stay in
-                 the DOM the whole time, so this is not a page navigation
-                 and needs no router.
-                 ============================================================ -->
-            <div class="tabs" role="tablist">
+    <!-- ============================================================
+         SECTION: Site header
+         Full-width bar with the site title and the tab switcher as
+         plain nav links. script.js toggles the "active"/"hidden"
+         classes on click -- both panels stay in the DOM the whole
+         time, so this is not a page navigation and needs no router.
+         ============================================================ -->
+    <header class="site-header">
+        <div class="site-header-inner">
+            <span class="site-title">LiverRisk</span>
+            <nav class="site-nav" role="tablist">
                 <!-- Starts selected: this is the panel visible on page load -->
                 <button type="button" id="tab-predict" class="tab-button active" role="tab" aria-selected="true" aria-controls="panel-predict">
                     Predict
@@ -29,85 +29,78 @@
                 <button type="button" id="tab-build-csv" class="tab-button" role="tab" aria-selected="false" aria-controls="panel-build-csv">
                     Build a test CSV
                 </button>
-            </div>
-
-            <!-- ============================================================
-                 SECTION: "Predict" panel
-                 Lets the user upload a CSV of one or more patients and
-                 get a risk score back from POST /predict.
-                 ============================================================ -->
-            <section id="panel-predict" class="tab-panel" role="tabpanel" aria-labelledby="tab-predict">
-                <div class="card">
-                    <div class="card-header">
-                        <span class="logo">🩺</span>
-                        <h1>LiverRisk prediction</h1>
-                    </div>
-                    <p class="intro">
-                        Upload a CSV file with the same columns as train.csv / test.csv,
-                        for one patient or a few patients, to get a risk prediction.
-                    </p>
-
-                    <!-- File upload form. We don't actually submit this form the normal
-                         way (that would reload the page) -- JavaScript intercepts the
-                         click on the button instead. -->
-                    <form id="upload-form">
-                        <label for="csv-file">Patient CSV file</label>
-                        <div class="file-row">
-                            <!-- The real file input, made invisible by CSS and stretched
-                                 to cover .file-row, so the whole styled box is clickable -->
-                            <input type="file" id="csv-file" name="file" accept=".csv" required>
-                            <!-- Fake "chosen file" label, updated by script.js on change -->
-                            <span id="file-name" class="file-name">No file chosen</span>
-                        </div>
-
-                        <button type="submit" id="predict-button">Predict</button>
-                    </form>
-
-                    <!-- Simple status line: shows "Loading..." or an error message -->
-                    <p id="status-message"></p>
-
-                    <!-- Where we print the raw JSON response from the backend -->
-                    <pre id="result-box"></pre>
-                </div>
-            </section>
-
-            <!-- ============================================================
-                 SECTION: "Build a test CSV" panel
-                 Lets the user pick from 10 sample patients (fetched once
-                 from GET /sample-patients) and download a CSV built
-                 entirely client-side from the checked rows.
-                 ============================================================ -->
-            <section id="panel-build-csv" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-build-csv">
-                <div class="card">
-                    <div class="card-header">
-                        <span class="logo">🧪</span>
-                        <h1>Build a test CSV</h1>
-                    </div>
-                    <p class="intro">
-                        Pick a few sample patients from the competition's real
-                        (unlabeled) test set to build a CSV file you can try
-                        in the Predict tab.
-                    </p>
-
-                    <!-- "Loading..." / error text while /sample-patients is in flight;
-                         cleared once the patient cards below are rendered -->
-                    <p id="sample-status">Loading sample patients&hellip;</p>
-                    <!-- One .patient-card per sample patient, filled in by script.js -->
-                    <div id="patient-list" class="patient-list"></div>
-
-                    <div class="csv-preview-header">
-                        <h2>CSV preview</h2>
-                        <!-- Disabled until at least one patient is checked -->
-                        <button type="button" id="download-csv-button" disabled>Download CSV</button>
-                    </div>
-                    <!-- Shows "N patient(s) selected" once the preview has content -->
-                    <p id="csv-preview-hint" class="hint">Select at least one patient above to build a file.</p>
-                    <!-- Read-only: display-only preview, not an editable field -->
-                    <textarea id="csv-preview" class="csv-preview" readonly rows="8"></textarea>
-                </div>
-            </section>
-
+            </nav>
         </div>
+    </header>
+
+    <main class="page">
+
+        <!-- ============================================================
+             SECTION: "Predict" panel
+             Lets the user upload a CSV of one or more patients and
+             get a risk score back from POST /predict.
+             ============================================================ -->
+        <section id="panel-predict" class="tab-panel" role="tabpanel" aria-labelledby="tab-predict">
+            <h1>LiverRisk prediction</h1>
+            <p class="intro">
+                Upload a CSV file with the same columns as train.csv / test.csv,
+                for one patient or a few patients, to get a risk prediction.
+            </p>
+
+            <!-- File upload form. We don't actually submit this form the normal
+                 way (that would reload the page) -- JavaScript intercepts the
+                 click on the button instead. -->
+            <form id="upload-form">
+                <label for="csv-file">Patient CSV file</label>
+                <div class="file-row">
+                    <!-- The real file input, made invisible by CSS and stretched
+                         to cover .file-row, so the whole styled box is clickable -->
+                    <input type="file" id="csv-file" name="file" accept=".csv" required>
+                    <!-- Fake "chosen file" label, updated by script.js on change -->
+                    <span id="file-name" class="file-name">No file chosen</span>
+                </div>
+
+                <button type="submit" id="predict-button">Predict</button>
+            </form>
+
+            <!-- Simple status line: shows "Loading..." or an error message -->
+            <p id="status-message"></p>
+
+            <!-- Where we print the raw JSON response from the backend -->
+            <pre id="result-box"></pre>
+        </section>
+
+        <!-- ============================================================
+             SECTION: "Build a test CSV" panel
+             Lets the user pick from 10 sample patients (fetched once
+             from GET /sample-patients) and download a CSV built
+             entirely client-side from the checked rows.
+             ============================================================ -->
+        <section id="panel-build-csv" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-build-csv">
+            <h1>Build a test CSV</h1>
+            <p class="intro">
+                Pick a few sample patients from the competition's real
+                (unlabeled) test set to build a CSV file you can try
+                in the Predict tab.
+            </p>
+
+            <!-- "Loading..." / error text while /sample-patients is in flight;
+                 cleared once the patient cards below are rendered -->
+            <p id="sample-status">Loading sample patients&hellip;</p>
+            <!-- One .patient-card per sample patient, filled in by script.js -->
+            <div id="patient-list" class="patient-list"></div>
+
+            <div class="csv-preview-header">
+                <h2>CSV preview</h2>
+                <!-- Disabled until at least one patient is checked -->
+                <button type="button" id="download-csv-button" disabled>Download CSV</button>
+            </div>
+            <!-- Shows "N patient(s) selected" once the preview has content -->
+            <p id="csv-preview-hint" class="hint">Select at least one patient above to build a file.</p>
+            <!-- Read-only: display-only preview, not an editable field -->
+            <textarea id="csv-preview" class="csv-preview" readonly rows="8"></textarea>
+        </section>
+
     </main>
 
     <script src="script.js"></script>
