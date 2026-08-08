@@ -35,31 +35,56 @@ h1, h2 {
 
 /* ====================================================================
    SECTION: Site header + tab switcher
+   Two stacked rows: a title row on plain page background, and a
+   tinted nav bar below it (visually its own strip). One 1px border
+   closes off the whole two-row block.
    ==================================================================== */
 .site-header {
     background-color: #ffffff;
     border-bottom: 1px solid #c9c9c9;
 }
 
-.site-header-inner {
+.site-header-top {
     max-width: 60rem;
     margin: 0 auto;
-    padding: 0.9rem 1.5rem;
+    padding: 1.5rem 1.5rem 1.1rem;
     box-sizing: border-box;
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5rem 2rem;
+    gap: 0.75rem;
+}
+
+/* Small solid-color tick to the left of the title, roughly the
+   height of the text -- not an icon/emoji, just a rule. */
+.site-title-accent {
+    display: inline-block;
+    width: 6px;
+    height: 1.8rem;
+    background-color: #1f6f5c;
+    border-radius: 1px;
+    flex-shrink: 0;
 }
 
 .site-title {
     font-family: Georgia, "Times New Roman", serif;
-    font-size: 1.3rem;
+    font-size: 1.9rem;
     font-weight: 700;
     color: #14293d;
+    line-height: 1;
+}
+
+/* Tinted strip, distinct from the page background, that visually
+   separates the nav row from the title row above it -- no extra
+   border here, the header keeps its single border at the very bottom. */
+.site-nav-bar {
+    background-color: #eef1ef;
 }
 
 .site-nav {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 0.6rem 1.5rem;
+    box-sizing: border-box;
     display: flex;
     gap: 1.5rem;
 }
@@ -80,14 +105,14 @@ h1, h2 {
 }
 
 .tab-button:hover {
-    color: #14293d;
+    color: #1f6f5c;
 }
 
 /* Applied by script.js to whichever tab is currently selected */
 .tab-button.active {
     font-weight: 700;
     color: #14293d;
-    border-bottom-color: #14293d;
+    border-bottom-color: #1f6f5c;
 }
 
 /* Applied by script.js to whichever panel is NOT currently selected */
@@ -99,11 +124,16 @@ h1, h2 {
 /* ====================================================================
    SECTION: Panel headings
    ==================================================================== */
+/* Colored left rule instead of a plain underline -- a small recurring
+   motif for section headings across the page. */
+h1, h2 {
+    border-left: 4px solid #1f6f5c;
+    padding: 0.1rem 0 0.1rem 0.75rem;
+}
+
 h1 {
     font-size: 1.5rem;
     margin: 0 0 0.5rem;
-    padding-bottom: 0.6rem;
-    border-bottom: 1px solid #c9c9c9;
 }
 
 .intro {
@@ -148,7 +178,7 @@ label {
 }
 
 .file-row:hover {
-    border-color: #14293d;
+    border-color: #1f6f5c;
 }
 
 /* The real <input type="file">: invisible but stretched over the
@@ -180,23 +210,23 @@ input[type="file"] {
 /* ====================================================================
    SECTION: Buttons (shared)
    ==================================================================== */
-/* Solid, flat navy button. Square-ish corners, no gradient, no shadow. */
+/* Solid, flat accent-colored button. Square-ish corners, no gradient, no shadow. */
 button {
     min-height: 44px; /* comfortable tap target on mobile */
     font-size: 1rem;
     font-weight: 700;
     font-family: inherit;
-    background-color: #14293d;
+    background-color: #1f6f5c;
     color: #ffffff;
-    border: 1px solid #14293d;
+    border: 1px solid #1f6f5c;
     border-radius: 3px;
     padding: 0 1.25rem;
     cursor: pointer;
 }
 
 button:hover {
-    background-color: #0d1c2b;
-    border-color: #0d1c2b;
+    background-color: #17594a;
+    border-color: #17594a;
 }
 
 button:disabled {
@@ -221,7 +251,7 @@ button:disabled {
 }
 
 #status-message.status-success {
-    color: #14293d;
+    color: #1f6f5c;
     font-weight: 700;
 }
 
@@ -229,22 +259,171 @@ button:disabled {
     margin: 0; /* no wasted margin before any status text has been set */
 }
 
-/* The result box can contain a long line of JSON text. overflow-x:auto
-   lets that one box scroll sideways instead of the whole page. */
-#result-box {
-    background-color: #ffffff;
-    color: #1a1a1a;
-    border: 1px solid #c9c9c9;
-    padding: 1rem;
-    border-radius: 3px;
-    overflow-x: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-size: 0.85rem;
+/* Holds one .result-card per patient in the /predict response */
+#result-box.result-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
 }
 
 #result-box:empty {
     display: none; /* no empty box before a prediction has run */
+}
+
+/* ====================================================================
+   SECTION: "Predict" tab -- styled result card
+   One card per patient. Plain bordered box, same visual language as
+   the rest of the page (serif sub-headings, teal accent, no shadows).
+   ==================================================================== */
+.result-card {
+    border: 1px solid #c9c9c9;
+    border-radius: 3px;
+    background-color: #ffffff;
+    padding: 1.25rem 1.5rem;
+}
+
+/* Only shown when a CSV has more than one patient */
+.result-card-title {
+    font-weight: 700;
+    color: #666666;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 0.75rem;
+}
+
+/* The single most prominent figure on the card: the patient's overall
+   (weighted) risk percentile. */
+.weighted-risk {
+    padding-bottom: 1rem;
+    margin-bottom: 1.25rem;
+    border-bottom: 1px solid #c9c9c9;
+}
+
+.weighted-risk-number {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #1f6f5c;
+    line-height: 1;
+}
+
+.weighted-risk-label {
+    font-size: 0.95rem;
+    color: #444444;
+    line-height: 1.5;
+    margin-top: 0.4rem;
+    max-width: 40rem;
+}
+
+/* Sub-heading style shared by the hepatic/death subsections and the
+   "Compared to clinical formulas" heading -- a smaller version of the
+   same colored-left-rule motif used for the page's h1/h2 headings. */
+.result-card h3 {
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 700;
+    font-size: 1rem;
+    color: #14293d;
+    border-left: 3px solid #1f6f5c;
+    padding: 0.05rem 0 0.05rem 0.6rem;
+    margin: 0 0 0.5rem;
+}
+
+/* Hepatic / death risk sub-sections, side by side on wide screens */
+.risk-subsections {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.25rem;
+}
+
+.risk-subsection {
+    flex: 1 1 220px;
+    min-width: 200px;
+}
+
+.risk-percentile {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #1f6f5c;
+    margin: 0.1rem 0 0.3rem;
+}
+
+.risk-raw-score {
+    font-size: 0.8rem;
+    color: #666666;
+    margin-bottom: 0.6rem;
+}
+
+/* Plain-div bar histogram: bars grow from the bottom by height % (set
+   inline per bar in script.js), not a charting library. The bar the
+   patient's own score falls into is highlighted in the accent color. */
+.histogram {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 56px;
+    border-bottom: 1px solid #c9c9c9;
+    overflow-x: auto; /* shrink first via flex; this is only a fallback */
+}
+
+.hist-bar {
+    flex: 1 1 0;
+    min-width: 3px;
+    background-color: #dde1de;
+    border-radius: 1px 1px 0 0;
+}
+
+.hist-bar.hist-bar-active {
+    background-color: #1f6f5c;
+}
+
+/* Explains a flat-looking histogram (e.g. a blend that's really just
+   one model's rank-percentile, uniform by construction) so it doesn't
+   read as a rendering bug. Only present when the backend sends a note. */
+.histogram-note {
+    font-size: 0.78rem;
+    color: #666666;
+    font-style: italic;
+    line-height: 1.4;
+    margin: 0.4rem 0 0;
+}
+
+/* "Compared to clinical formulas" section */
+.formula-comparison {
+    padding-top: 1rem;
+    border-top: 1px solid #c9c9c9;
+}
+
+.formula-columns {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+}
+
+.formula-col {
+    flex: 1 1 140px;
+    min-width: 140px;
+}
+
+.formula-name {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #444444;
+    margin-bottom: 0.25rem;
+}
+
+.formula-value {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #1f6f5c;
+}
+
+.formula-value.unavailable {
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: #999999;
 }
 
 
@@ -285,7 +464,7 @@ button:disabled {
 
 /* Highlights the whole card while its checkbox is checked */
 .patient-card:has(.patient-checkbox:checked) {
-    border-color: #14293d;
+    border-color: #1f6f5c;
     background-color: #eef2f6;
 }
 
@@ -297,7 +476,7 @@ button:disabled {
     height: 22px;
     min-width: 22px;
     margin-top: 0.15rem; /* nudge down to align with the first line of text */
-    accent-color: #14293d;
+    accent-color: #1f6f5c;
     cursor: pointer;
 }
 
@@ -364,8 +543,17 @@ button:disabled {
    SECTION: Responsive tweaks (narrow / phone-width screens)
    ==================================================================== */
 @media (max-width: 600px) {
-    .site-header-inner {
-        padding: 0.75rem 1rem;
+    .site-header-top {
+        padding: 1.1rem 1rem 0.85rem;
+    }
+
+    .site-title {
+        font-size: 1.5rem;
+    }
+
+    .site-nav {
+        padding: 0.5rem 1rem;
+        gap: 1rem;
     }
 
     .page {
@@ -385,5 +573,21 @@ button:disabled {
     .csv-preview-header {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    /* Stack the result card's hepatic/death subsections and the
+       formula-comparison columns instead of squeezing them side by side */
+    .result-card {
+        padding: 1rem;
+    }
+
+    .weighted-risk-number {
+        font-size: 2rem;
+    }
+
+    .risk-subsections,
+    .formula-columns {
+        flex-direction: column;
+        gap: 1.25rem;
     }
 }

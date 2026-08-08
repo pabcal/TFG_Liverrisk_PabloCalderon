@@ -6,7 +6,7 @@ const uploadForm = document.querySelector("#upload-form");     // the <form> wra
 const fileInput = document.querySelector("#csv-file");         // the real (visually hidden) <input type="file">
 const predictButton = document.querySelector("#predict-button"); // submit button, disabled while a request is in flight
 const statusMessage = document.querySelector("#status-message"); // "Predicting...", "Done.", or an error line
-const resultBox = document.querySelector("#result-box");       // <pre> that prints the raw JSON response
+const resultBox = document.querySelector("#result-box");       // container script.js fills with one .result-card per patient
 const fileNameLabel = document.querySelector("#file-name");    // fake "chosen file" text shown over the real input
 
 
@@ -42,7 +42,7 @@ uploadForm.addEventListener("submit", async function (event) {
     // click it twice while we're waiting for the server.
     statusMessage.textContent = "Predicting...";
     statusMessage.className = "";       // clear any leftover error/success styling
-    resultBox.textContent = "";         // clear any previous result
+    resultBox.innerHTML = "";           // clear any previous result cards
     predictButton.disabled = true;
 
     // FormData is the standard way to send a file to a server with fetch().
@@ -66,8 +66,7 @@ uploadForm.addEventListener("submit", async function (event) {
         } else {
             statusMessage.textContent = "Done.";
             statusMessage.className = "status-success";
-            // Pretty-print the JSON with 2-space indentation so it's readable.
-            resultBox.textContent = JSON.stringify(data, null, 2);
+            renderResults(data);
         }
     } catch (error) {
         // This happens if the server can't be reached at all.
@@ -78,6 +77,193 @@ uploadForm.addEventListener("submit", async function (event) {
     // Always re-enable the button, whether the request succeeded or failed.
     predictButton.disabled = false;
 });
+
+
+// ====================================================================
+// SECTION: "Predict" tab -- styled result card
+// ====================================================================
+// Turns a percentile number (0-100) into an ordinal string, e.g.
+// 64.1 -> "64th", 21.7 -> "22nd". Rounds first, since "64.1th
+// percentile" doesn't read as a normal English ordinal.
+function ordinal(percentile) {
+    const n = Math.round(percentile);
+    const lastTwoDigits = n % 100;
+    if (lastTwoDigits >= 11 && lastTwoDigits <= 13) {
+        return n + "th";
+    }
+    switch (n % 10) {
+        case 1: return n + "st";
+        case 2: return n + "nd";
+        case 3: return n + "rd";
+        default: return n + "th";
+    }
+}
+
+// Builds a plain-div bar histogram from the backend's pre-binned
+// {bin_start, bin_end, count} array. Bar heights are set as a % of the
+// tallest bin (inline style, computed here -- not a charting library).
+// The one bar the patient's own score falls into is highlighted.
+function buildHistogram(bins, value) {
+    const container = document.createElement("div");
+    container.className = "histogram";
+
+    const maxCount = Math.max.apply(null, bins.map(function (bin) { return bin.count; }));
+
+    bins.forEach(function (bin, i) {
+        const bar = document.createElement("div");
+        bar.className = "hist-bar";
+        bar.style.height = (maxCount > 0 ? (bin.count / maxCount) * 100 : 0) + "%";
+
+        // The last bin's upper edge is inclusive, so a patient scoring
+        // exactly at the training cohort's max still lands in a bar.
+        const isLastBin = i === bins.length - 1;
+        const inThisBin = value !== null
+            && value >= bin.bin_start
+            && (isLastBin ? value <= bin.bin_end : value < bin.bin_end);
+        if (inThisBin) {
+            bar.classList.add("hist-bar-active");
+        }
+
+        container.appendChild(bar);
+    });
+
+    return container;
+}
+
+// One "Hepatic event risk" / "Death risk" sub-section: a percentile
+// headline, the underlying blended score in small print, and a
+// histogram marking where this patient falls in the training cohort.
+// `note` (nullable) explains a flat-looking histogram, e.g. when that
+// endpoint's blend is really just one model's rank-percentile alone --
+// see main.py's single_model_note() -- so it doesn't read as broken.
+function buildRiskSubsection(title, rawScore, percentile, histogramBins, note) {
+    const section = document.createElement("div");
+    section.className = "risk-subsection";
+
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+
+    const percentileLine = document.createElement("div");
+    percentileLine.className = "risk-percentile";
+    percentileLine.textContent = ordinal(percentile) + " percentile";
+
+    const rawScoreLine = document.createElement("div");
+    rawScoreLine.className = "risk-raw-score";
+    rawScoreLine.textContent = "Blended risk score: " + rawScore;
+
+    section.appendChild(heading);
+    section.appendChild(percentileLine);
+    section.appendChild(rawScoreLine);
+    section.appendChild(buildHistogram(histogramBins, rawScore));
+
+    if (note) {
+        const noteLine = document.createElement("p");
+        noteLine.className = "histogram-note";
+        noteLine.textContent = note;
+        section.appendChild(noteLine);
+    }
+
+    return section;
+}
+
+// One column ("ML blend" / "FIB-4" / "APRI") in the clinical-formula
+// comparison. `percentile` is null when the patient is missing the
+// labs a formula needs -- shown as plain text, not left blank.
+function buildFormulaColumn(name, percentile) {
+    const col = document.createElement("div");
+    col.className = "formula-col";
+
+    const label = document.createElement("div");
+    label.className = "formula-name";
+    label.textContent = name;
+
+    const value = document.createElement("div");
+    if (percentile === null) {
+        value.className = "formula-value unavailable";
+        value.textContent = "Not available (missing lab values)";
+    } else {
+        value.className = "formula-value";
+        value.textContent = ordinal(percentile) + " percentile";
+    }
+
+    col.appendChild(label);
+    col.appendChild(value);
+    return col;
+}
+
+// Builds one full .result-card for one patient's /predict result.
+// `index`/`total` are only used to label the card "Patient N of M"
+// when the uploaded CSV had more than one patient.
+function buildResultCard(result, index, total) {
+    const card = document.createElement("div");
+    card.className = "result-card";
+
+    if (total > 1) {
+        const cardTitle = document.createElement("div");
+        cardTitle.className = "result-card-title";
+        cardTitle.textContent = "Patient " + (index + 1) + " of " + total;
+        card.appendChild(cardTitle);
+    }
+
+    // The single headline figure: overall (weighted) risk percentile.
+    const weighted = document.createElement("div");
+    weighted.className = "weighted-risk";
+
+    const weightedNumber = document.createElement("div");
+    weightedNumber.className = "weighted-risk-number";
+    weightedNumber.textContent = ordinal(result.weighted_percentile);
+
+    const weightedLabel = document.createElement("div");
+    weightedLabel.className = "weighted-risk-label";
+    weightedLabel.textContent =
+        "This patient ranks in the " + ordinal(result.weighted_percentile) +
+        " percentile for overall risk (a 70% hepatic-event / 30% death blend), compared to the training cohort.";
+
+    weighted.appendChild(weightedNumber);
+    weighted.appendChild(weightedLabel);
+    card.appendChild(weighted);
+
+    // Hepatic event / death risk, side by side, each with its own histogram.
+    const subsections = document.createElement("div");
+    subsections.className = "risk-subsections";
+    subsections.appendChild(buildRiskSubsection(
+        "Hepatic event risk", result.risk_hepatic_event, result.hepatic_percentile,
+        result.histograms.hepatic, result.distribution_notes.hepatic
+    ));
+    subsections.appendChild(buildRiskSubsection(
+        "Death risk", result.risk_death, result.death_percentile,
+        result.histograms.death, result.distribution_notes.death
+    ));
+    card.appendChild(subsections);
+
+    // Hepatic-risk percentile from the ML blend next to the two
+    // formula-based scores, so they can be read side by side.
+    const comparison = document.createElement("div");
+    comparison.className = "formula-comparison";
+
+    const comparisonHeading = document.createElement("h3");
+    comparisonHeading.textContent = "Compared to clinical formulas";
+    comparison.appendChild(comparisonHeading);
+
+    const columns = document.createElement("div");
+    columns.className = "formula-columns";
+    columns.appendChild(buildFormulaColumn("ML blend (hepatic)", result.hepatic_percentile));
+    columns.appendChild(buildFormulaColumn("FIB-4", result.fib4_percentile));
+    columns.appendChild(buildFormulaColumn("APRI", result.apri_percentile));
+    comparison.appendChild(columns);
+    card.appendChild(comparison);
+
+    return card;
+}
+
+// Renders the full /predict response (a list of per-patient results)
+// as one result card per patient, replacing whatever was in the box.
+function renderResults(results) {
+    resultBox.innerHTML = "";
+    results.forEach(function (result, i) {
+        resultBox.appendChild(buildResultCard(result, i, results.length));
+    });
+}
 
 
 // ====================================================================

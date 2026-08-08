@@ -12,14 +12,17 @@
 
     <!-- ============================================================
          SECTION: Site header
-         Full-width bar with the site title and the tab switcher as
-         plain nav links. script.js toggles the "active"/"hidden"
-         classes on click -- both panels stay in the DOM the whole
-         time, so this is not a page navigation and needs no router.
+         Two stacked rows: the title row, and a tinted nav bar below
+         it. script.js toggles the "active"/"hidden" classes on click
+         -- both panels stay in the DOM the whole time, so this is not
+         a page navigation and needs no router.
          ============================================================ -->
     <header class="site-header">
-        <div class="site-header-inner">
+        <div class="site-header-top">
+            <span class="site-title-accent" aria-hidden="true"></span>
             <span class="site-title">LiverRisk</span>
+        </div>
+        <div class="site-nav-bar">
             <nav class="site-nav" role="tablist">
                 <!-- Starts selected: this is the panel visible on page load -->
                 <button type="button" id="tab-predict" class="tab-button active" role="tab" aria-selected="true" aria-controls="panel-predict">
@@ -66,8 +69,9 @@
             <!-- Simple status line: shows "Loading..." or an error message -->
             <p id="status-message"></p>
 
-            <!-- Where we print the raw JSON response from the backend -->
-            <pre id="result-box"></pre>
+            <!-- Filled in by script.js with one styled .result-card per
+                 patient in the /predict response -->
+            <div id="result-box" class="result-list"></div>
         </section>
 
         <!-- ============================================================

@@ -47,7 +47,7 @@ from fastapi.staticfiles import StaticFiles
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from liverrisk.clinical_scores import fib4  # noqa: E402
+from liverrisk.clinical_scores import compute_fib4_apri, fib4  # noqa: E402
 from liverrisk.features import (  # noqa: E402
     REPEATED_BASES,
     STATIC_CAT,
@@ -95,7 +95,7 @@ def load_trained_models() -> dict:
     }
 
 
-def load_training_reference_scores(models: dict) -> dict:
+def load_training_reference_scores(models: dict, X_hep: pd.DataFrame, X_death: pd.DataFrame) -> dict:
     """
     Runs the loaded models on the training-cohort features to get each
     model's raw score for every training patient. We need these raw
@@ -103,9 +103,6 @@ def load_training_reference_scores(models: dict) -> dict:
     into "percentile within the training cohort" (see module docstring,
     step 4). This is plain inference (model.predict), not training.
     """
-    X_hep, _, _, _ = load_features("hep", PROCESSED_DIR)
-    X_death, _, _, _ = load_features("death", PROCESSED_DIR)
-
     return {
         "hep": {
             "cox": models["cox_hep"].predict(X_hep),
@@ -120,8 +117,16 @@ def load_training_reference_scores(models: dict) -> dict:
     }
 
 
+# X_hep/X_death are also needed (beyond load_training_reference_scores
+# above) to build the FIB-4/APRI reference distribution and, further
+# down, the weighted_risk reference distribution -- so they're loaded
+# once here rather than inside a function that would only return the
+# model scores.
+X_HEP, _, _, _ = load_features("hep", PROCESSED_DIR)
+X_DEATH, _, _, _ = load_features("death", PROCESSED_DIR)
+
 MODELS = load_trained_models()
-TRAIN_RAW_SCORES = load_training_reference_scores(MODELS)
+TRAIN_RAW_SCORES = load_training_reference_scores(MODELS, X_HEP, X_DEATH)
 
 with open(MODELS_DIR / "feature_columns.json") as f:
     FEATURE_COLUMNS = json.load(f)
@@ -135,6 +140,43 @@ TRAIN_BLENDED_SCORES = {
     "hep": joblib.load(MODELS_DIR / "train_scores_hepatic.joblib"),
     "death": joblib.load(MODELS_DIR / "train_scores_death.joblib"),
 }
+
+# --------------------------------------------------------------------
+# weighted_risk reference distribution (for weighted_percentile).
+#
+# weighted_risk itself is just 0.7 * risk_hepatic_event + 0.3 *
+# risk_death for one patient -- the same formula build_submission()
+# (scripts/train.py) applies to the test-set predictions, which is
+# safe there because pred_hep/pred_death are computed for the exact
+# same test rows in the exact same order.
+#
+# The training cohort does NOT have that guarantee: the hepatic and
+# death endpoints were trained on different patient subsets (death
+# excludes patients without usable death-censoring data), so
+# TRAIN_BLENDED_SCORES["hep"] (len 1253) and ["death"] (len 984) are
+# NOT row-aligned -- death's patients are a subset of hep's, but not
+# in general at the same positions. Combining them positionally would
+# silently pair up scores from different patients. Instead we align by
+# patient index (X_HEP.index / X_DEATH.index, which load_features
+# preserves from the processed parquet files) and only build the
+# weighted reference over the patients who have both scores, i.e. the
+# death cohort.
+_hep_scores_by_patient = pd.Series(TRAIN_BLENDED_SCORES["hep"], index=X_HEP.index)
+_death_scores_by_patient = pd.Series(TRAIN_BLENDED_SCORES["death"], index=X_DEATH.index)
+TRAIN_WEIGHTED_SCORES = (
+    0.7 * _hep_scores_by_patient.reindex(_death_scores_by_patient.index) + 0.3 * _death_scores_by_patient
+).to_numpy()
+
+# --------------------------------------------------------------------
+# FIB-4 / APRI reference distributions, computed once from the hepatic
+# training cohort's already-built features (X_HEP), reusing
+# clinical_scores.compute_fib4_apri() -- the exact same fib4()/apri()
+# formulas Study 1's notebook used, not a reimplementation. NaN rows
+# (patients missing the required last-observed labs) are dropped from
+# the reference arrays so they don't distort the percentile lookup.
+_train_fib4_apri = compute_fib4_apri(X_HEP, "hep")
+TRAIN_FIB4_SCORES = _train_fib4_apri["fib4_score"].dropna().to_numpy()
+TRAIN_APRI_SCORES = _train_fib4_apri["apri_score"].dropna().to_numpy()
 
 
 # --------------------------------------------------------------------
@@ -150,6 +192,67 @@ def percentile_within_training(new_score: float, train_scores: np.ndarray) -> fl
     combined = np.append(train_scores, new_score)
     ranks_as_percentiles = pd.Series(combined).rank(method="average", pct=True)
     return float(ranks_as_percentiles.iloc[-1])
+
+
+def percentile_le(value: float, reference_scores: np.ndarray) -> float:
+    """
+    What percentage of reference_scores are <= value? Used for every
+    "percentile within the training cohort" figure reported to the
+    frontend (hepatic, death, weighted, FIB-4, APRI) so they're all on
+    the same 0-100 scale and computed the same way.
+    """
+    return round(float((reference_scores <= value).mean()) * 100, 1)
+
+
+def make_histogram(scores: np.ndarray, n_bins: int = 20) -> list[dict]:
+    """
+    Pre-bins a training-cohort reference distribution into a small,
+    JSON-friendly list of {bin_start, bin_end, count} -- cheaper to
+    send on every /predict response than the ~1000 raw training scores,
+    and it's all the frontend needs to draw a bar-based histogram.
+    """
+    counts, edges = np.histogram(scores, bins=n_bins)
+    return [
+        {"bin_start": round(float(edges[i]), 4), "bin_end": round(float(edges[i + 1]), 4), "count": int(counts[i])}
+        for i in range(len(counts))
+    ]
+
+
+# Computed once at startup: every /predict response reuses the same
+# training-cohort histograms, only the patient's marker position changes.
+HISTOGRAMS = {
+    "hepatic": make_histogram(TRAIN_BLENDED_SCORES["hep"]),
+    "death": make_histogram(TRAIN_BLENDED_SCORES["death"]),
+    "weighted": make_histogram(TRAIN_WEIGHTED_SCORES),
+}
+
+
+def single_model_note(weights, threshold: float = 0.999) -> str | None:
+    """
+    If one blend weight is essentially 1.0 (the others ~0), the
+    "blended" score for that endpoint is really just one model's
+    rank-percentile alone -- which is close to uniformly distributed
+    across the training cohort by construction (it's a rank/N value),
+    not because of anything wrong with the histogram. Returns an
+    explanatory note for that case, so the frontend can caption a flat
+    histogram instead of it silently looking broken; returns None when
+    the blend actually mixes models (a real, non-uniform distribution).
+    """
+    model_names = ["Coxnet", "Random Survival Forest", "XGBoost"]
+    for name, w in zip(model_names, weights):
+        if w >= threshold:
+            return f"This score is the {name} model's percentile rank alone, so it's spread almost evenly across the training cohort by construction."
+    return None
+
+
+# hep = [0.0, 1.0, 0.0] as tuned today (pure RSF), which is why the
+# hepatic histogram looks flat -- see single_model_note() above. Kept
+# data-driven (reads BLEND_WEIGHTS) rather than hardcoded, so this note
+# disappears on its own if the models are ever retuned to a real mix.
+DISTRIBUTION_NOTES = {
+    "hepatic": single_model_note(BLEND_WEIGHTS["hep"]),
+    "death": single_model_note(BLEND_WEIGHTS["death"]),
+}
 
 
 def score_one_endpoint(patient_row: pd.DataFrame, endpoint: str) -> tuple[float, float]:
@@ -173,9 +276,9 @@ def score_one_endpoint(patient_row: pd.DataFrame, endpoint: str) -> tuple[float,
     weight_sum = w_cox + w_rsf + w_xgb
     blended = (w_cox * pct_cox + w_rsf * pct_rsf + w_xgb * pct_xgb) / weight_sum
 
-    percentile_vs_train = float((TRAIN_BLENDED_SCORES[endpoint] <= blended).mean()) * 100
+    percentile_vs_train = percentile_le(blended, TRAIN_BLENDED_SCORES[endpoint])
 
-    return round(float(blended), 4), round(percentile_vs_train, 1)
+    return round(float(blended), 4), percentile_vs_train
 
 
 # --------------------------------------------------------------------
@@ -214,6 +317,11 @@ async def predict(file: UploadFile = File(...)):
 
     patient_features = patient_features.reindex(columns=FEATURE_COLUMNS)
 
+    # FIB-4/APRI for every uploaded patient at once (vectorized), using
+    # the same clinical_scores.compute_fib4_apri() helper the training-
+    # cohort reference distribution was built from above.
+    patient_fib4_apri = compute_fib4_apri(patient_features, "hep")
+
     # Step 4: score every patient (row) in the upload.
     results = []
     for i in range(len(patient_features)):
@@ -222,11 +330,31 @@ async def predict(file: UploadFile = File(...)):
         risk_hepatic_event, hepatic_percentile = score_one_endpoint(one_patient, "hep")
         risk_death, death_percentile = score_one_endpoint(one_patient, "death")
 
+        # Same formula build_submission() (scripts/train.py) uses to turn
+        # a test-set patient's two blended scores into one weighted_risk.
+        weighted_risk = round(0.7 * risk_hepatic_event + 0.3 * risk_death, 4)
+        weighted_percentile = percentile_le(weighted_risk, TRAIN_WEIGHTED_SCORES)
+
+        fib4_score = patient_fib4_apri["fib4_score"].iloc[i]
+        apri_score = patient_fib4_apri["apri_score"].iloc[i]
+        fib4_score = None if pd.isna(fib4_score) else round(float(fib4_score), 2)
+        apri_score = None if pd.isna(apri_score) else round(float(apri_score), 2)
+        fib4_percentile = None if fib4_score is None else percentile_le(fib4_score, TRAIN_FIB4_SCORES)
+        apri_percentile = None if apri_score is None else percentile_le(apri_score, TRAIN_APRI_SCORES)
+
         results.append({
             "risk_hepatic_event": risk_hepatic_event,
             "hepatic_percentile": hepatic_percentile,
             "risk_death": risk_death,
             "death_percentile": death_percentile,
+            "weighted_risk": weighted_risk,
+            "weighted_percentile": weighted_percentile,
+            "fib4_score": fib4_score,
+            "fib4_percentile": fib4_percentile,
+            "apri_score": apri_score,
+            "apri_percentile": apri_percentile,
+            "histograms": HISTOGRAMS,
+            "distribution_notes": DISTRIBUTION_NOTES,
         })
 
     return results
