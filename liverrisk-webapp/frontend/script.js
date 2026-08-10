@@ -9,6 +9,13 @@ const statusMessage = document.querySelector("#status-message"); // "Predicting.
 const resultBox = document.querySelector("#result-box");       // container script.js fills with one .result-card per patient
 const fileNameLabel = document.querySelector("#file-name");    // fake "chosen file" text shown over the real input
 
+// "My active patients" pool for the Rankings tab: a plain in-memory
+// array, not localStorage, so it resets on page refresh by design.
+// Patients are added here from a result card's "+ Add to active pool"
+// button (below) and read/ranked entirely client-side by the Rankings
+// tab's own section further down -- nothing here ever touches the backend.
+let activePatients = []; // each: {label, risk_hepatic_event, risk_death, weighted_risk, fib4_score, apri_score, age_at_baseline, visit_count}
+
 
 // ====================================================================
 // SECTION: "Predict" tab -- file input display
@@ -191,6 +198,54 @@ function buildFormulaColumn(name, percentile) {
     return col;
 }
 
+// Row that pushes this patient's already-computed scores into the
+// in-memory activePatients pool (see the DOM-references section at the
+// top), for the Rankings tab's "My active patients" scope. Uses a
+// plain inline text input for the label, defaulting to "Patient N" if
+// left blank -- NOT window.prompt()/confirm(), which some embedded
+// browser contexts (e.g. VS Code's Simple Browser) silently block,
+// making a prompt()-based button look like it does nothing at all.
+function buildAddToPoolRow(result) {
+    const row = document.createElement("div");
+    row.className = "add-to-pool-row";
+
+    const defaultLabel = "Patient " + (activePatients.length + 1);
+
+    const labelInput = document.createElement("input");
+    labelInput.type = "text";
+    labelInput.className = "add-to-pool-input";
+    labelInput.placeholder = defaultLabel;
+    labelInput.setAttribute("aria-label", "Label for this patient in your active pool");
+
+    const addButton = document.createElement("button");
+    addButton.type = "button";
+    addButton.className = "add-to-pool-button";
+    addButton.textContent = "+ Add to active pool";
+
+    addButton.addEventListener("click", function () {
+        const enteredLabel = labelInput.value.trim();
+
+        activePatients.push({
+            label: enteredLabel === "" ? defaultLabel : enteredLabel,
+            risk_hepatic_event: result.risk_hepatic_event,
+            risk_death: result.risk_death,
+            weighted_risk: result.weighted_risk,
+            fib4_score: result.fib4_score,
+            apri_score: result.apri_score,
+            age_at_baseline: result.age_at_baseline,
+            visit_count: result.visit_count,
+        });
+
+        addButton.textContent = "Added ✓";
+        addButton.disabled = true;
+        labelInput.disabled = true;
+    });
+
+    row.appendChild(labelInput);
+    row.appendChild(addButton);
+    return row;
+}
+
 // Builds one full .result-card for one patient's /predict result.
 // `index`/`total` are only used to label the card "Patient N of M"
 // when the uploaded CSV had more than one patient.
@@ -253,6 +308,8 @@ function buildResultCard(result, index, total) {
     comparison.appendChild(columns);
     card.appendChild(comparison);
 
+    card.appendChild(buildAddToPoolRow(result));
+
     return card;
 }
 
@@ -295,6 +352,15 @@ tabButtons.forEach(function (button) {
         // down and starts out null, so this only fires once.
         if (button.id === "tab-build-csv" && !samplePatientsData) {
             loadSamplePatients();
+        }
+
+        // Same lazy-load idea for Rankings: fetch/render the first time
+        // the tab is opened, not at page load. Safe to call again on
+        // every later visit too -- renderRankingsTable() re-renders from
+        // its own cache (training rows) or the in-memory active-patients
+        // array, with no repeat backend call either way.
+        if (button.id === "tab-rankings") {
+            renderRankingsTable();
         }
     });
 });
@@ -478,3 +544,257 @@ downloadCsvButton.addEventListener("click", function () {
     // Release the temporary object URL now that the download has started.
     URL.revokeObjectURL(url);
 });
+
+
+// ====================================================================
+// SECTION: "Rankings" tab -- DOM references & state
+// ====================================================================
+const rankingsStatus = document.querySelector("#rankings-status");
+const rankingsThead = document.querySelector("#rankings-thead");
+const rankingsTbody = document.querySelector("#rankings-tbody");
+const hideMissingRow = document.querySelector("#hide-missing-row");
+const hideMissingCheckbox = document.querySelector("#hide-missing-checkbox");
+const methodButtons = document.querySelectorAll(".toggle-button[data-method]");
+const scopeButtons = document.querySelectorAll(".toggle-button[data-scope]");
+
+// Defaults match the HTML's "active" toggle buttons: ML blend, training cohort.
+let rankingsMethod = "ml";   // "ml" | "fib4" | "apri"
+let rankingsScope = "training"; // "training" | "active"
+
+// GET /rankings responses, cached per method so switching back and
+// forth between ML/FIB-4/APRI doesn't re-fetch data that never changes
+// while the server is running. activePatients (the other data source)
+// is declared up in the Predict-tab section, since it's filled in from there.
+let rankingsTrainingCache = {}; // method -> array of row objects
+
+
+// ====================================================================
+// SECTION: "Rankings" tab -- shared helpers
+// ====================================================================
+// Human-readable label for the currently selected method, used in the
+// table's "Score" column header.
+function methodLabel(method) {
+    if (method === "fib4") return "FIB-4";
+    if (method === "apri") return "APRI";
+    return "ML blend";
+}
+
+// Which of an active-pool patient's already-computed scores to rank by,
+// matching whichever method is currently toggled -- the same method
+// toggle drives both scopes, just from a different data source.
+function activePatientScore(patient, method) {
+    if (method === "fib4") return patient.fib4_score;
+    if (method === "apri") return patient.apri_score;
+    return patient.weighted_risk;
+}
+
+// A plain <td> with the given text.
+function buildCell(text) {
+    const cell = document.createElement("td");
+    cell.textContent = text;
+    return cell;
+}
+
+
+// ====================================================================
+// SECTION: "Rankings" tab -- fetch training-cohort rankings
+// ====================================================================
+async function loadTrainingRanking(method) {
+    if (rankingsTrainingCache[method]) {
+        return rankingsTrainingCache[method];
+    }
+
+    const response = await fetch("/rankings?method=" + method + "&scope=training");
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data.detail || "Unknown error.");
+    }
+
+    rankingsTrainingCache[method] = data.rows;
+    return data.rows;
+}
+
+
+// ====================================================================
+// SECTION: "Rankings" tab -- render the unified table
+// ====================================================================
+// Header row for the "Training cohort" scope.
+function renderTrainingTableHead() {
+    const tr = document.createElement("tr");
+    ["Rank", "Patient ID", "Score (" + methodLabel(rankingsMethod) + ")", "Age", "Visits", "Outcome"].forEach(function (label) {
+        const th = document.createElement("th");
+        th.textContent = label;
+        tr.appendChild(th);
+    });
+    rankingsThead.appendChild(tr);
+}
+
+// Header row for the "My active patients" scope (no percentile column,
+// a blank header cell over the remove buttons instead of "Outcome").
+function renderActiveTableHead() {
+    const tr = document.createElement("tr");
+    ["Rank", "Patient", "Score (" + methodLabel(rankingsMethod) + ")", "Age", "Visits", ""].forEach(function (label) {
+        const th = document.createElement("th");
+        th.textContent = label;
+        tr.appendChild(th);
+    });
+    rankingsThead.appendChild(tr);
+}
+
+// "0.71 (71st percentile)", or a plain note when the score is missing
+// (a patient without the labs FIB-4/APRI need).
+function formatScoreWithPercentile(score, percentile) {
+    if (score === null) {
+        return "Missing lab values";
+    }
+    return score.toFixed(2) + " (" + ordinal(percentile) + " percentile)";
+}
+
+// One <td> for the training-cohort "Outcome" column: a small muted tag
+// for a real event, or a plain "No event recorded" note otherwise.
+function buildOutcomeCell(outcome) {
+    const cell = document.createElement("td");
+    if (outcome) {
+        const tag = document.createElement("span");
+        tag.className = "outcome-tag";
+        tag.textContent = outcome;
+        cell.appendChild(tag);
+    } else {
+        const span = document.createElement("span");
+        span.className = "no-outcome";
+        span.textContent = "No event recorded";
+        cell.appendChild(span);
+    }
+    return cell;
+}
+
+// Renders the "Training cohort" scope: fetches (or reuses the cached)
+// /rankings rows for the current method, optionally hides null-score
+// rows, and fills in the table.
+async function renderTrainingScope() {
+    rankingsStatus.textContent = "Loading rankings...";
+    rankingsStatus.className = "hint";
+
+    let rows;
+    try {
+        rows = await loadTrainingRanking(rankingsMethod);
+    } catch (error) {
+        rankingsStatus.textContent = "Could not load rankings: " + error.message;
+        rankingsStatus.className = "hint status-error";
+        return;
+    }
+    rankingsStatus.textContent = "";
+
+    if (hideMissingCheckbox.checked && rankingsMethod !== "ml") {
+        rows = rows.filter(function (row) { return row.score !== null; });
+    }
+
+    renderTrainingTableHead();
+    rows.forEach(function (row) {
+        const tr = document.createElement("tr");
+        tr.appendChild(buildCell(String(row.rank)));
+        tr.appendChild(buildCell(row.patient_id));
+        tr.appendChild(buildCell(formatScoreWithPercentile(row.score, row.percentile)));
+        tr.appendChild(buildCell(row.age_at_baseline === null ? "n/a" : String(row.age_at_baseline)));
+        tr.appendChild(buildCell(String(row.visit_count)));
+        tr.appendChild(buildOutcomeCell(row.outcome));
+        rankingsTbody.appendChild(tr);
+    });
+}
+
+// Renders the "My active patients" scope: ranks the in-memory
+// activePatients array client-side by whichever method is selected --
+// no fetch at all.
+function renderActiveScope() {
+    if (activePatients.length === 0) {
+        rankingsStatus.textContent = "No active patients yet — go to Predict, score a patient, and click \"Add to active pool.\"";
+        rankingsStatus.className = "hint";
+        renderActiveTableHead();
+        return;
+    }
+    rankingsStatus.textContent = "";
+
+    // Pair each patient with its score for the current method, keeping
+    // the original array index so a Remove click can splice() the right entry.
+    let entries = activePatients.map(function (patient, index) {
+        return { patient: patient, index: index, score: activePatientScore(patient, rankingsMethod) };
+    });
+
+    if (hideMissingCheckbox.checked && rankingsMethod !== "ml") {
+        entries = entries.filter(function (entry) { return entry.score !== null; });
+    }
+
+    // Descending by score, null-score entries always last.
+    entries.sort(function (a, b) {
+        if ((a.score === null) !== (b.score === null)) {
+            return a.score === null ? 1 : -1;
+        }
+        return a.score === null ? 0 : b.score - a.score;
+    });
+
+    renderActiveTableHead();
+    entries.forEach(function (entry, position) {
+        const tr = document.createElement("tr");
+        tr.appendChild(buildCell(String(position + 1)));
+        tr.appendChild(buildCell(entry.patient.label));
+        tr.appendChild(buildCell(entry.score === null ? "Missing lab values" : entry.score.toFixed(2)));
+        tr.appendChild(buildCell(entry.patient.age_at_baseline === null ? "n/a" : String(entry.patient.age_at_baseline)));
+        tr.appendChild(buildCell(String(entry.patient.visit_count)));
+
+        const removeCell = document.createElement("td");
+        const removeButton = document.createElement("button");
+        removeButton.type = "button";
+        removeButton.className = "remove-button";
+        removeButton.textContent = "×";
+        removeButton.setAttribute("aria-label", "Remove " + entry.patient.label + " from active pool");
+        removeButton.addEventListener("click", function () {
+            // entry.index is this patient's position in the *original*
+            // activePatients array (captured before this render's sort/filter).
+            activePatients.splice(entry.index, 1);
+            renderRankingsTable();
+        });
+        removeCell.appendChild(removeButton);
+        tr.appendChild(removeCell);
+
+        rankingsTbody.appendChild(tr);
+    });
+}
+
+// Top-level render function for the whole tab: clears the table, shows
+// the hide-missing checkbox only when it's actually meaningful (FIB-4/
+// APRI, where a score can be null), then delegates to whichever scope
+// is currently selected.
+async function renderRankingsTable() {
+    rankingsThead.innerHTML = "";
+    rankingsTbody.innerHTML = "";
+    hideMissingRow.classList.toggle("hidden", rankingsMethod === "ml");
+
+    if (rankingsScope === "training") {
+        await renderTrainingScope();
+    } else {
+        renderActiveScope();
+    }
+}
+
+
+// ====================================================================
+// SECTION: "Rankings" tab -- toggle buttons
+// ====================================================================
+methodButtons.forEach(function (button) {
+    button.addEventListener("click", function () {
+        methodButtons.forEach(function (b) { b.classList.toggle("active", b === button); });
+        rankingsMethod = button.dataset.method;
+        renderRankingsTable();
+    });
+});
+
+scopeButtons.forEach(function (button) {
+    button.addEventListener("click", function () {
+        scopeButtons.forEach(function (b) { b.classList.toggle("active", b === button); });
+        rankingsScope = button.dataset.scope;
+        renderRankingsTable();
+    });
+});
+
+hideMissingCheckbox.addEventListener("change", renderRankingsTable);

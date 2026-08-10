@@ -426,6 +426,188 @@ button:disabled {
     color: #999999;
 }
 
+/* "+ Add to active pool" row at the bottom of a result card: a plain
+   text input (the patient's label) next to the button -- an inline
+   input instead of a window.prompt() dialog, since some embedded
+   browser contexts silently block prompt()/confirm(). */
+.add-to-pool-row {
+    display: flex;
+    gap: 0.6rem;
+    margin-top: 1.25rem;
+}
+
+.add-to-pool-input {
+    flex: 1;
+    min-height: 44px; /* comfortable tap target on mobile */
+    min-width: 0; /* lets the input actually shrink inside the flex row instead of overflowing */
+    font-size: 0.95rem;
+    font-family: inherit;
+    color: #1a1a1a;
+    border: 1px solid #999999;
+    border-radius: 3px;
+    padding: 0 0.85rem;
+    box-sizing: border-box;
+}
+
+.add-to-pool-input:hover {
+    border-color: #1f6f5c;
+}
+
+.add-to-pool-input:disabled {
+    background-color: #f5f5f4;
+    color: #999999;
+}
+
+.add-to-pool-button {
+    white-space: nowrap;
+}
+
+
+/* ====================================================================
+   SECTION: "Rankings" tab
+   ==================================================================== */
+.rankings-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin: 1.25rem 0;
+}
+
+/* Segmented-button toggle: one bordered group, teal fill on whichever
+   button is active. Used for both the method and scope toggles. */
+.toggle-group {
+    display: inline-flex;
+    border: 1px solid #c9c9c9;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.toggle-button {
+    min-height: 44px; /* comfortable tap target on mobile */
+    min-width: 44px;
+    padding: 0 1rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+    font-family: inherit;
+    background-color: #ffffff;
+    color: #333333;
+    border: none;
+    border-right: 1px solid #c9c9c9;
+    border-radius: 0;
+    cursor: pointer;
+}
+
+.toggle-button:last-child {
+    border-right: none;
+}
+
+.toggle-button:hover {
+    color: #1f6f5c;
+}
+
+.toggle-button.active {
+    background-color: #1f6f5c;
+    color: #ffffff;
+}
+
+.hide-missing-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 44px; /* comfortable tap target on mobile */
+    font-size: 0.9rem;
+    color: #444444;
+    margin: 0 0 0.75rem;
+}
+
+.hide-missing-row.hidden {
+    display: none;
+}
+
+.hide-missing-row input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    accent-color: #1f6f5c;
+    cursor: pointer;
+}
+
+/* Horizontal scroll container so the table shrinks/scrolls on narrow
+   screens instead of overflowing the page. */
+.table-wrap {
+    overflow-x: auto;
+    border: 1px solid #c9c9c9;
+    border-radius: 3px;
+}
+
+.rankings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.rankings-table th,
+.rankings-table td {
+    padding: 0.6rem 0.85rem;
+    text-align: left;
+    white-space: nowrap;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.rankings-table th {
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 700;
+    color: #14293d;
+    background-color: #f4f6f5;
+    border-bottom: 1px solid #c9c9c9;
+}
+
+.rankings-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.rankings-table tbody tr:hover {
+    background-color: #f7f9f8;
+}
+
+/* Small muted tag for a real historical event ("Event, 12.3 yr") --
+   neutral gray, not the accent color, so it doesn't compete with it. */
+.outcome-tag {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2rem 0.55rem;
+    border-radius: 3px;
+    background-color: #eceeec;
+    color: #444444;
+}
+
+.no-outcome {
+    color: #999999;
+    font-size: 0.85rem;
+}
+
+/* "×" remove button for a row in "My active patients" -- reuses the
+   site's existing error-red (already used for status-error) since this
+   is a destructive action, not a second accent color. */
+.remove-button {
+    min-width: 44px;
+    min-height: 36px;
+    padding: 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1;
+    background-color: #ffffff;
+    color: #a11e0e;
+    border: 1px solid #c9c9c9;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.remove-button:hover {
+    border-color: #a11e0e;
+    background-color: #fdf1ef;
+}
+
 
 /* ====================================================================
    SECTION: "Build a test CSV" tab
@@ -589,5 +771,26 @@ button:disabled {
     .formula-columns {
         flex-direction: column;
         gap: 1.25rem;
+    }
+
+    /* Stack the label input above the button instead of squeezing them
+       onto one row */
+    .add-to-pool-row {
+        flex-direction: column;
+    }
+
+    /* Toggle groups wrap onto their own lines instead of overflowing;
+       the table itself already scrolls horizontally via .table-wrap. */
+    .rankings-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .toggle-group {
+        width: 100%;
+    }
+
+    .toggle-button {
+        flex: 1;
     }
 }

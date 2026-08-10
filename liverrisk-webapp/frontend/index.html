@@ -32,6 +32,10 @@
                 <button type="button" id="tab-build-csv" class="tab-button" role="tab" aria-selected="false" aria-controls="panel-build-csv">
                     Build a test CSV
                 </button>
+                <!-- Starts unselected/hidden; opening it triggers the first /rankings fetch -->
+                <button type="button" id="tab-rankings" class="tab-button" role="tab" aria-selected="false" aria-controls="panel-rankings">
+                    Rankings
+                </button>
             </nav>
         </div>
     </header>
@@ -103,6 +107,61 @@
             <p id="csv-preview-hint" class="hint">Select at least one patient above to build a file.</p>
             <!-- Read-only: display-only preview, not an editable field -->
             <textarea id="csv-preview" class="csv-preview" readonly rows="8"></textarea>
+        </section>
+
+        <!-- ============================================================
+             SECTION: "Rankings" panel
+             One unified table driven by two toggles: which score to
+             rank by (ML blend / FIB-4 / APRI), and which pool of
+             patients to show (the real training cohort, fetched from
+             GET /rankings, or "My active patients" -- patients the user
+             has scored in the Predict tab and added to an in-memory
+             list, ranked entirely client-side). Loads training-cohort
+             data immediately, no upload required.
+             ============================================================ -->
+        <section id="panel-rankings" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-rankings">
+            <h1>Rankings</h1>
+            <p class="intro">
+                See where a patient falls among the training cohort, by
+                ML blend or by a clinical formula -- or rank the patients
+                you've scored yourself in the Predict tab.
+            </p>
+
+            <div class="rankings-controls">
+                <!-- Which score to rank by. Only meaningful for the
+                     "Training cohort" scope -- disabled/ignored for
+                     "My active patients", see script.js. -->
+                <div class="toggle-group" role="group" aria-label="Scoring method">
+                    <button type="button" class="toggle-button active" data-method="ml">ML blend</button>
+                    <button type="button" class="toggle-button" data-method="fib4">FIB-4</button>
+                    <button type="button" class="toggle-button" data-method="apri">APRI</button>
+                </div>
+                <!-- Which pool of patients the table shows -->
+                <div class="toggle-group" role="group" aria-label="Patient pool">
+                    <button type="button" class="toggle-button active" data-scope="training">Training cohort</button>
+                    <button type="button" class="toggle-button" data-scope="active">My active patients</button>
+                </div>
+            </div>
+
+            <!-- Only shown for method=fib4/apri, where a score can be
+                 missing (a patient without the required lab values) --
+                 ML/weighted scores are never null in the training cohort. -->
+            <label id="hide-missing-row" class="hide-missing-row hidden">
+                <input type="checkbox" id="hide-missing-checkbox">
+                Hide patients with missing data
+            </label>
+
+            <!-- "Loading...", an error, or "No active patients yet..." -->
+            <p id="rankings-status" class="hint"></p>
+
+            <!-- Filled in by script.js: thead/tbody columns differ by
+                 scope, so both are built in JS rather than hardcoded here -->
+            <div class="table-wrap">
+                <table id="rankings-table" class="rankings-table">
+                    <thead id="rankings-thead"></thead>
+                    <tbody id="rankings-tbody"></tbody>
+                </table>
+            </div>
         </section>
 
     </main>

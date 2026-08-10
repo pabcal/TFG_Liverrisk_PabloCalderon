@@ -28,7 +28,9 @@ def _safe_div(a, b):
     if isinstance(out, pd.Series):
         out = out.replace([np.inf, -np.inf], np.nan)
     else:
-        out = np.where(np.isfinite(out), out, np.nan)
+        #np.where(condition, value_if_true, value_if_false). I did it this way just in case
+        #out is a numpy array.
+        out = np.where(np.isfinite(out), out, np.nan) 
     return out
 
 
@@ -37,8 +39,7 @@ def fib4(age, ast, plt, alt):
     FIB-4 = (age * AST) / (platelets * sqrt(ALT)).
 
     Same formula used for fib4_v{1..4}, fib4_first, and fib4_last in
-    build_patient_features(). Accepts scalars or array-likes (pandas
-    Series / numpy arrays broadcast the same way the inline version did).
+    build_patient_features(). Accepts scalars or array-likes.
     """
     return _safe_div(age * ast, plt * np.sqrt(alt))
 
@@ -68,6 +69,13 @@ def compute_fib4_apri(X: pd.DataFrame, name: str) -> pd.DataFrame:
     "death")`, matching load_features's `name` argument, for symmetry with
     the rest of the pipeline's per-endpoint calls.
     """
+
+    #Given a patient table, first I make sure it has the four lab columns needed to calculate 
+    #FIB4 and APRI. If not, return an error. If everything is fine, compute formulas for every 
+    #patient at once,and return a 2 column lined up patient for patient with the results from the
+    # 2 formulas. Important to remember that if patient WNNHJ7XVG0FN is row label 47, he will also be
+    #in row table 47 in the new returned table, despite not having the trust id as a column.
+
     del name
 
     required = {"age_last_observed", "ast__last", "alt__last", "plt__last"}
