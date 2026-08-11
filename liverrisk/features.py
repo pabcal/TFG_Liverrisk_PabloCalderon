@@ -555,10 +555,13 @@ def prepare_survival_target(df: pd.DataFrame, outcome: str):
     y = Surv.from_arrays(event=event, time=time, name_event=event_name, name_time="Time_years")
     return d, y, event, time
 
-
+"""
 # ---------------------------------------------------------------------
 # Persistence: data/processed/ read + write (NEW)
 # ---------------------------------------------------------------------
+
+Useful so everything is not in one big notebook
+"""
 def save_features(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarray, name: str, path: str | Path) -> None:
     """
     Save one endpoint's engineered features + survival target to
@@ -567,14 +570,17 @@ def save_features(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarray, name:
     each call, so it should reflect whichever call ran last (hepatic and
     death share the same X_all column space in the current pipeline).
     """
+    #converts the string path into a Path
     path = Path(path)
+    #creates destination folder, if it exists dont error out
     path.mkdir(parents=True, exist_ok=True)
-
+    #saves X in Parquet format in path/ .......
     X.to_parquet(path / f"{name}_X.parquet")
-
+    # saves the special y object using pickle. I use pickle because y is the special survival object
+    # that has event and time, which cant be saved in normal csv or parquet. wb means write in binary
     with open(path / f"{name}_y.pkl", "wb") as f:
         pickle.dump({"y": y, "event": event, "time": time}, f)
-
+    # saves the column names of x into feature_columns.json
     with open(path / "feature_columns.json", "w") as f:
         json.dump(list(X.columns), f, indent=2)
 
@@ -585,20 +591,24 @@ def load_features(name: str, path: str | Path):
 
     X = pd.read_parquet(path / f"{name}_X.parquet")
 
+    #rb is read in binary mode
     with open(path / f"{name}_y.pkl", "rb") as f:
         payload = pickle.load(f)
-
+    # this is where X_hep, y_hep, hep_event, hep_time = load_features("hep", PROCESSED_DIR) comes from
+    #(just 1 example)
     return X, payload["y"], payload["event"], payload["time"]
 
 
 def load_feature_columns(path: str | Path) -> list[str]:
+    """reads back the plain json list of column names"""
     path = Path(path)
     with open(path / "feature_columns.json") as f:
         return json.load(f)
 
 
 def save_test_features(X_test: pd.DataFrame, path: str | Path) -> None:
-    """Save the (unlabeled) test-set features to `path/test_X.parquet`."""
+    """saving X_test, which is the engineered features from the unlabeled test set after they 
+    went through build patient features, obviously with no Y as the test.csv has no targets"""
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
     X_test.to_parquet(path / "test_X.parquet")
@@ -611,16 +621,21 @@ def load_test_features(path: str | Path) -> pd.DataFrame:
 
 def save_test_ids(test_df: pd.DataFrame, path: str | Path) -> None:
     """
-    Save the test set's id column (`trustii_id` if present, else
+    Save the test set's id column (trustii_id if not NaN, else
     `patient_id_anon`) to `path/test_ids.json`, in the same row order as
     `save_test_features`'s `test_X.parquet` -- `test_df` must be the same
     (unfiltered, unreordered) frame passed to `build_patient_features()`.
+
+    This solves a problem I had previously. My final csv ranking needs 2 things lined up correctly
+    for every row: the trustii_id and their predicted risk scores. This makes sure of that
     """
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
 
     id_col = "trustii_id" if "trustii_id" in test_df.columns else "patient_id_anon"
 
+    #saves a small dictionary with two entries, which column was used (id_col) and the 
+    #real list of ID values (ids) as one JSON file
     with open(path / "test_ids.json", "w") as f:
         json.dump({"id_col": id_col, "ids": test_df[id_col].tolist()}, f, indent=2)
 
