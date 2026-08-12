@@ -29,32 +29,53 @@ from liverrisk.models import (
     signed_time_label,
 )
 
-
+# akes the whole pred array and the whole y (split into its event/time parts) and compares them together,
+# patient by patient, computing the C-index across every comparable pair in one call
+# the three arrays (event, time, pred) must all be the same length, in the same patient order — position 0 
+# in event has to be the same patient as position 0 in time and position 0 in pred
+"""
 def cindex_from_y(y, pred: np.ndarray) -> float:
     event_name, time_name = y.dtype.names
     return float(concordance_index_censored(y[event_name], y[time_name], pred)[0])
 
+"""    
+
+"""
+Runs full cross-validation for Coxnet or RSF (works for both, since they share the same sksurv model interface), 
+returning the average C-index and its spread across folds
+
+model_factory: the make_coxnet_pipeline or make_rsf_pipeline fucntions. I pass the actual functions as params
+because cv_cindex_sksurv needs to build a brand-new, untrained model 15 separate times (once per fold), and only a 
+function can be called repeatedly to produce a fresh result each time
+"""
 
 def cv_cindex_sksurv(model_factory, X: pd.DataFrame, y, event: np.ndarray,
                     n_splits: int = 5, n_repeats: int = 3) -> tuple[float, float]:
+    #builds the fold splitting tool. 5 folds, 3 repeats
     cv = RepeatedStratifiedKFold(
         n_splits=n_splits,
         n_repeats=n_repeats,
         random_state=RANDOM_STATE,
     )
-
+    #gets the field names out of y
     event_name, time_name = y.dtype.names
     scores = []
 
+    #tr is the training subset and va the validation subset
     for tr, va in cv.split(X, event.astype(int)):
+        #call the factory, fresh, for this exact round of training and val. builds a new untrained pipeline
         model = model_factory(X.iloc[tr])
+        # trains the model on this rounds training patients 
         model.fit(X.iloc[tr], y[tr])
+        # predict on the held out patients, the validation ones
         pred = model.predict(X.iloc[va])
+        # grade pred against the true event/time for those same held-out patients — this round's C-index score.
         scores.append(concordance_index_censored(y[event_name][va], y[time_name][va], pred)[0])
 
+    #after all 15 rounds, average the scores and measure their spread.
     return float(np.mean(scores)), float(np.std(scores))
 
-
+# Since xgboost doesnt share sksurv model itnerface, it needs a different function, this time with time encoded
 def cv_cindex_xgb(X: pd.DataFrame, event: np.ndarray, time: np.ndarray,
                   n_splits: int = 5, n_repeats: int = 3,
                   xgb_params: dict | None = None) -> tuple[float, float]:
@@ -81,9 +102,14 @@ def cv_cindex_xgb(X: pd.DataFrame, event: np.ndarray, time: np.ndarray,
     )
 
     scores = []
+    #XGboost specific encoding trick, onlu applied to the training fold.
     y_signed = signed_time_label(event, time)
 
     for tr, va in cv.split(X, event.astype(int)):
+        # **xgb_params unpacks the dictionary. 
+        # unpacks a dictionary back out into individual named arguments. 
+        # So if xgb_params = {"learning_rate": 0.025, "max_depth": 2, ...}, then make_xgb_pipeline(X.iloc[tr], **xgb_params) 
+        # is exactly equivalent to writing make_xgb_pipeline(X.iloc[tr], learning_rate=0.025, max_depth=2, ...)
         model = make_xgb_pipeline(X.iloc[tr], **xgb_params)
         model.fit(X.iloc[tr], y_signed[tr])
         pred = model.predict(X.iloc[va])
@@ -203,9 +229,13 @@ def cv_cindex_formula(X: pd.DataFrame, y, event: np.ndarray, score_array: np.nda
     event_name, time_name = y.dtype.names
     score_array = np.asarray(score_array)
     scores = []
-
+    #no training here, only validation
     for _, va in cv.split(X, event.astype(int)):
+        #score_array[va]: grab this fold's formula scores (positions va only), example: the FIB-4 values for the held out patients
+        #np.isfinite(score_array[va]) — check each of those: is it a real, usable number? Gives back True/False.
+        #va[np.isfinite(score_array[va])]: filters by true or false, so only keeps the valid positions (where the formula score is actually usable)
         valid = va[np.isfinite(score_array[va])]
+        # uses valid so that the patients with an undefined FIB4/APRI score dont contribute to the score 
         scores.append(concordance_index_censored(y[event_name][valid], y[time_name][valid], score_array[valid])[0])
 
     return float(np.mean(scores)), float(np.std(scores))
@@ -239,16 +269,53 @@ def bootstrap_cindex_diff(y, event: np.ndarray, time: np.ndarray,
     97.5th) percentile -- if this interval excludes zero, the gap between
     score_a and score_b is unlikely to be noise.
     """
+
+    """
+    the function does:
+
+    After computing C indez for ML and Fib say, ML = 0.80, FIB-4 = 0.66. The gap looks like ML wins by 0.14. 
+    But is that gap REAL, or could it just be luck — bad luck for FIB-4, good luck for ML, purely because of which specific 
+    patients happened to be in the dataset. This is a real worry as there are only 47 hepatic events. 
+    It basically asks if I had gotten slightly different patients, how much would this 0.14 gap have wobbled around?
+
+    I cant get new patients to test this, but i can fake having new patients by randomely resampling from the existing ones,
+    some show up twice or more, some dont show up. I do this 1000 times, each time i build a pretend dataset compute MLS and FIB4s C index
+    and record the difference between the 2.
+
+    After doing this 1000 times, you have 1000 different versions of "the gap" — maybe: +0.08, +0.15, +0.11, +0.03, +0.19, ... — sometimes bigger than 
+    the original 0.14, sometimes smaller, because each pretend dataset was slightly different.
+
+    The output: 
+
+    hepatic's [-0.110, +0.067] (crosses zero → honestly, a tie) versus death's [+0.204, +0.415] (clearly above zero → a real, confident win). Without this function, 
+    you'd have had no way to know that hepatic's apparent difference was actually just noise
+
+    [-0.110, +0.067] is a range that contains the middle 95% of your 1000 resampled differences — throwing away the most extreme 2.5% on the bottom and the most extreme 2.5% on the top.
+
+    If the ENTIRE middle-95% range sits above zero (like death's [+0.204, +0.415]) — that means even the "unlucky, low end" of your 1000 resamples still showed ML winning.
+
+    If it crosses 0, it is a tie
+    
+
+    """
+
+
+
     event = np.asarray(event)
     time = np.asarray(time)
+    #score a could be the ML models risk score for each of the 1253 hepatic patients
+    # score b could be FIB4-risk score for the same 1253 patients in the same order
     score_a = np.asarray(score_a)
     score_b = np.asarray(score_b)
     n = len(event)
 
+    #random number generator
     rng = np.random.RandomState(random_state)
     diffs = []
 
     while len(diffs) < n_boot:
+        # generate n random whole numbers between 0 and n-1
+        # Some patient positions will show up multiple times in idx; others won't show up at all.
         idx = rng.randint(0, n, size=n)
 
         valid = idx[np.isfinite(score_a[idx]) & np.isfinite(score_b[idx])]

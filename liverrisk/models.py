@@ -23,6 +23,19 @@ replaced an earlier version where make_xgb_pipeline silently defaulted to
 a single shared config.xgb_hyperparams(), which made it easy to lose
 track of which endpoint a given fit actually used.
 """
+
+"""
+Where the 3 models get defined. The preprocessing they use, the hyperpareameters, structure
+
+I use functions like these instead of one fixed model object because the same model gets fit
+many times on different subsets of data, once per cross val fold. Each time it needs a fresh untrained 
+copy. Thats why a function that builds the new pipeline each time its called allows this. 
+Calling make_coxnet_pipeline(X) 15 times during cross-validation, gets me 15 independent, untrained 
+pipelines, not one pipeline re fitting on top of itself. Reusing weights carries over knowledge from previous folds,
+ causes data leakage that inflates your performance metrics and leads to overfitting. So this way is better
+"""
+
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,6 +50,8 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sksurv.ensemble import RandomSurvivalForest
 from sksurv.linear_model import CoxnetSurvivalAnalysis
 
+# xgboost has a few dependencies that dont always work on everyones machine (from what ive researched)
+# in all machines ive tried its worked, but just in case i wrap it around a try
 try:
     from xgboost import XGBRegressor
     HAS_XGB = True
@@ -53,6 +68,10 @@ RANDOM_STATE = 27
 # Feature preprocessing
 # ---------------------------------------------------------------------
 def split_feature_types(X: pd.DataFrame):
+    #cat_cols = []
+    #for c in STATIC_CAT:
+        #if c in X.columns:
+            #cat_cols.append(c)
     cat_cols = [c for c in STATIC_CAT if c in X.columns]
     num_cols = [c for c in X.columns if c not in cat_cols]
     return num_cols, cat_cols
@@ -61,21 +80,36 @@ def split_feature_types(X: pd.DataFrame):
 def make_preprocessor(X: pd.DataFrame, sparse_threshold: float = 0.3):
     num_cols, cat_cols = split_feature_types(X)
 
+    #Pipeline([("name, tool"), ("name, tool")]). Pipeline has 1 argument: a list contining tuples
+    # Its like a plan, first do imputation, then do scaling
     num_pipe = Pipeline([
+        #fills missing NaN values with median
         ("imp", SimpleImputer(strategy="median", add_indicator=True)),
+        #rescale the numbers
         ("sc", StandardScaler(with_mean=False)),
     ])
 
     cat_pipe = Pipeline([
+        #NaN gets replaced with -1
         ("imp", SimpleImputer(strategy="constant", fill_value=-1)),
+        #Turns categories like gender: F/M into seperate 0/1 columns. ignores unknown values (if a new patient doesnt have F/M)
         ("oh", OneHotEncoder(handle_unknown="ignore")),
     ])
 
+    # ColumnTransformer takes the whole 255 column X, but only hands X's num_cols to num_pipe and X's cat_cols
+    # to cat_pipe. Completely seperate, each pipeline never sees the otger's columns. It then stiches both process 
+    # back together in one combined table
+    # It returns the ColumnTransformer object, but not yet run. 
+    # take the full table, split it into numeric/categorical pieces, process each piece with its own separate mini-recipe, then combine the results" 
+    #  and it only actually executes when something later calls .fit()/.transform() on it.
     return ColumnTransformer(
         transformers=[
+            #applies num_pipe to num cols
             ("num", num_pipe, num_cols),
+            #applies cat_pipe only to cat_cols
             ("cat", cat_pipe, cat_cols),
         ],
+        #any column not in either list gets dropped
         remainder="drop",
         sparse_threshold=sparse_threshold,
     )
@@ -83,6 +117,8 @@ def make_preprocessor(X: pd.DataFrame, sparse_threshold: float = 0.3):
 
 # ---------------------------------------------------------------------
 # Coxnet
+# Builds the pipeline for the coxnet model. This function is called fresh on every fold furing 
+# cross validation.
 # ---------------------------------------------------------------------
 def make_coxnet_pipeline(X: pd.DataFrame, l1_ratio: float = 0.9) -> Pipeline:
     """
@@ -91,6 +127,14 @@ def make_coxnet_pipeline(X: pd.DataFrame, l1_ratio: float = 0.9) -> Pipeline:
     search_coxnet_l1_ratio() sweeps this argument; nothing here reads
     config.coxnet_l1_ratio_hep()/_death() automatically -- callers that
     want the tuned value must pass it in themselves.
+    This way it doesnt have to guess if its death or hep
+
+    When cox_pipeline.fit(X_train, y_train) runs, Pipeline (not make_coxnet_pipeline, not you) internally does this:
+
+    1. Takes X_train (the data YOU gave it, right now, in this .fit() call).
+    2. Runs step "pre" (the already-built ColumnTransformer)'s .fit_transform() on X_train — producing a cleaned version.
+    3. Overwrites its own internal notion of "the current data" with that cleaned result.
+    4. Runs step "cox"'s .fit(), using that now-cleaned data (not the original X_train).
     """
     return Pipeline([
         ("pre", make_preprocessor(X, sparse_threshold=0.3)),
@@ -120,8 +164,14 @@ def search_coxnet_l1_ratio(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarr
     best-first, same shape as search_blend_weights. Does not write
     anywhere -- the caller (02_grid_search.ipynb) persists the winner via
     config.update_config(coxnet_hyperparams=...).
+
+    Tries several candidate l1_ratio values, scores each with cross-validation, returns 
+    whichever performed best. This is what produces the tuned 0.1 (hepatic) / 0.99 (death) values
     """
     del time
+
+    # mutable defaults (like lists) can behave unexpectedly if used directly as a default value
+    # which is why i default it to none in the arguments and build it here
 
     if l1_ratios is None:
         l1_ratios = [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 0.99]
@@ -130,6 +180,10 @@ def search_coxnet_l1_ratio(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarr
 
     rows = []
     for l1_ratio in l1_ratios:
+
+
+        #def factory(X_fold, l1_ratio=l1_ratio):
+            #return make_coxnet_pipeline(X_fold, l1_ratio=l1_ratio)
         factory = lambda X_fold, l1_ratio=l1_ratio: make_coxnet_pipeline(X_fold, l1_ratio=l1_ratio)
         mean, std = cv_cindex_sksurv(factory, X, y, event, n_repeats=n_repeats)
         rows.append({"l1_ratio": l1_ratio, "mean": mean, "std": std})
