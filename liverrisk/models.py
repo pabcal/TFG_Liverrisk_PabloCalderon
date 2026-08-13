@@ -22,9 +22,9 @@ functions) must explicitly pass the right endpoint's values in. This
 replaced an earlier version where make_xgb_pipeline silently defaulted to
 a single shared config.xgb_hyperparams(), which made it easy to lose
 track of which endpoint a given fit actually used.
-"""
 
-"""
+
+
 Where the 3 models get defined. The preprocessing they use, the hyperpareameters, structure
 
 I use functions like these instead of one fixed model object because the same model gets fit
@@ -151,7 +151,7 @@ def search_coxnet_l1_ratio(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarr
                             l1_ratios: list[float] | None = None,
                             n_repeats: int = 1) -> tuple[float, float, pd.DataFrame]:
     """
-    Sweeps Coxnet's l1_ratio, scoring each candidate with cv_cindex_sksurv
+    Sweeps Coxnet's l1_ratio, scoring each candidate with cv_cindex_coxnet
     (alpha itself is left alone -- fit_coxnet_with_alpha_cv already tunes
     alpha per fit, and re-tuning it inside this search too would multiply
     the cost for no benefit).
@@ -176,16 +176,11 @@ def search_coxnet_l1_ratio(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarr
     if l1_ratios is None:
         l1_ratios = [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 0.99]
 
-    from liverrisk.cv import cv_cindex_sksurv  # local import: cv.py imports from this module, avoids a circular import
+    from liverrisk.cv import cv_cindex_coxnet  # local import: cv.py imports from this module, avoids a circular import
 
     rows = []
     for l1_ratio in l1_ratios:
-
-
-        #def factory(X_fold, l1_ratio=l1_ratio):
-            #return make_coxnet_pipeline(X_fold, l1_ratio=l1_ratio)
-        factory = lambda X_fold, l1_ratio=l1_ratio: make_coxnet_pipeline(X_fold, l1_ratio=l1_ratio)
-        mean, std = cv_cindex_sksurv(factory, X, y, event, n_repeats=n_repeats)
+        mean, std = cv_cindex_coxnet(X, y, event, n_repeats=n_repeats, l1_ratio=l1_ratio)
         rows.append({"l1_ratio": l1_ratio, "mean": mean, "std": std})
 
     results_df = pd.DataFrame(rows).sort_values("mean", ascending=False).reset_index(drop=True)
@@ -212,23 +207,36 @@ def fit_coxnet_with_alpha_cv(X: pd.DataFrame, y, random_state: int = RANDOM_STAT
     `n_alphas`/`n_splits` default to config.coxnet_alpha_search() (30/3,
     same as the original hardcoded defaults) if not passed explicitly.
     """
+
+    #loads from best config in case the function is called without one of the params
     if n_alphas is None or n_splits is None:
         cfg = config.coxnet_alpha_search()
         n_alphas = cfg["n_alphas"] if n_alphas is None else n_alphas
         n_splits = cfg["n_splits"] if n_splits is None else n_splits
 
+    # fits the model becaause after fitting the model, we get the 100 (or around there) alpha values
+    # because when coxnet fits, it doesnt compute one single answer, but tries a whole range of alpha strengths.
+    # and each computes a seperate set of feature weights.
     path_model = make_coxnet_pipeline(X, l1_ratio=l1_ratio)
     path_model.fit(X, y)
+    #grabs the actual CoxSurvivalAnalysis object frin the cox part of the pipeline, and from that object
+    # grabs the list of alpha values (cox_) coxnet has computed internally, which could maybe be 100 of them
     alphas = path_model.named_steps["cox"].alphas_
 
+    # if the coxSurvivalAnalysis returned more alphas than we want, (100 > 30), we create evenly spaced
+    # positions betweenn 0 and the last index. For example, if alpha returned 100 alphas and we wanted 30, we create 
+    # 30 evenly spaced alphas from 0 to 100.
     if len(alphas) > n_alphas:
         idx = np.linspace(0, len(alphas) - 1, n_alphas).round().astype(int)
         idx = np.unique(idx)
+        #select just those subsampled alphas
         alphas = alphas[idx]
 
     preprocessor = make_preprocessor(X, sparse_threshold=0.3)
+    #X_t now has the full clean table
     X_t = preprocessor.fit_transform(X)
-
+    #not a stratifiedKFold to save time. We are only looking for the best alpha, no need to do it with
+    # the same rigor as a model evaluation.
     cv = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
     grid = GridSearchCV(
@@ -244,6 +252,8 @@ def fit_coxnet_with_alpha_cv(X: pd.DataFrame, y, random_state: int = RANDOM_STAT
     )
     grid.fit(X_t, y)
 
+    # The Pipeline wrapper is what GUARANTEES the raw-data-cleaning step happens automatically before Coxnet ever 
+    # sees anything, every time .predict() gets called on the bundle
     return Pipeline([
         ("pre", preprocessor),
         ("cox", grid.best_estimator_),
@@ -274,6 +284,13 @@ def signed_time_label(event: np.ndarray, time: np.ndarray) -> np.ndarray:
     """
     XGBoost survival:cox convention:
     positive time = observed event, negative time = right-censored.
+
+    My y has event and time. But the XGBoost doesnt accept that format.
+    it expects the target as one plain array of numbers. But it still needs to know 
+    both things, when and if it happened. The array now becomes:
+    Positive time → "this patient had the event, at this time"
+    Negative time → "this patient was censored (event didn't happen, or unknown), observed for at least this long"
+    so event = true, time = 3.5 becomes +3.5. Event = false time = 8.0 becomes -8 and so on
     """
     return np.where(event, time, -time)
 
@@ -340,34 +357,49 @@ def search_xgb_hyperparams(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarr
         "reg_lambda": [1.0, 5.0, 10.0],
         "reg_alpha": [0.0, 0.5, 1.0],
     }
+    #the 8 hyperparameter names as a list
     keys = list(param_grid.keys())
 
     rng = np.random.RandomState(random_state)
-    seen: set[tuple] = set()
-    candidates: list[dict] = []
+    seen = set()
+    candidates = []
     while len(candidates) < n_candidates:
-        candidate = {k: param_grid[k][rng.randint(len(param_grid[k]))] for k in keys}
+        #candidate = {k: param_grid[k][rng.randint(len(param_grid[k]))] for k in keys}
+        candidate = {}
+        #loops through all the keys and randomely finds a value for each key, when the loop ends
+        # you would have found one possible combination 
+        for k in keys:
+            #grabs the value from the param_grid for the current param, for example if the current param is max_depth, grabs [2,3,4]
+            options_for_current_param = param_grid[k]
+            # random number from 0 to the length of the param, on the above scenario it would be random number from 0 to 2
+            random_idx = rng.randint(len(options_for_current_param))
+            # chooses one of the options randomely
+            chosen_value = options_for_current_param[random_idx]
+            #becomes the candidate 
+            candidate[k] = chosen_value
+        # candidate could now be something like {"learning_rate": 0.05, "max_depth": 3, "n_estimators": 900, "min_child_weight": 10, "subsample": 0.85, "colsample_bytree": 0.7, "reg_lambda": 5.0, "reg_alpha": 0.5}
+        # sig becomes (0.05, 3, 900, 10, 0.85, 0.7, 5.0, 0.5)
         sig = tuple(candidate[k] for k in keys)
+        # checks if i have seen this exact combination before, if i have dont take this repeated one into account
         if sig in seen:
             continue
+        # if not seen, add it
         seen.add(sig)
         candidates.append(candidate)
 
     rows = []
-    best_params: dict | None = None
+    best_params = None
     best_mean = -np.inf
+    #go through all the candidates built earlier
     for candidate in candidates:
         mean, std = cv_cindex_xgb(X, event, time, n_repeats=1, xgb_params=candidate)
+        # builds one row of the results table. The 8 hyperparameters plus the mean and std
         rows.append({**candidate, "mean": mean, "std": std})
+        #winner tracker
         if mean > best_mean:
             best_mean = mean
             best_params = candidate
-
-    # Track the winner from `candidates` directly (native Python int/float),
-    # rather than reading it back out of results_df -- a DataFrame row that
-    # mixes int columns (max_depth, n_estimators, ...) with float columns
-    # (mean, std, ...) upcasts everything to float64 on `.iloc[row]`, which
-    # would silently turn e.g. max_depth=3 into 3.0.
+            
     results_df = pd.DataFrame(rows).sort_values("mean", ascending=False).reset_index(drop=True)
 
     return dict(best_params), float(best_mean), results_df

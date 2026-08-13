@@ -1,6 +1,7 @@
 """
 Cross-validation scoring, moved verbatim from ANNITIA_baseline_local.ipynb
-section 4.14: cindex_from_y, cv_cindex_sksurv, cv_cindex_xgb, cv_cindex_blend.
+section 4.14: cindex_from_y, cv_cindex_coxnet, cv_cindex_rsf, cv_cindex_xgb,
+cv_cindex_blend.
 
 cv_cindex_blend still requires explicit `weights` (raises ValueError if
 None) and still accepts `rsf_n_estimators` for cheap CV during search --
@@ -41,16 +42,13 @@ def cindex_from_y(y, pred: np.ndarray) -> float:
 """    
 
 """
-Runs full cross-validation for Coxnet or RSF (works for both, since they share the same sksurv model interface), 
-returning the average C-index and its spread across folds
-
-model_factory: the make_coxnet_pipeline or make_rsf_pipeline fucntions. I pass the actual functions as params
-because cv_cindex_sksurv needs to build a brand-new, untrained model 15 separate times (once per fold), and only a 
-function can be called repeatedly to produce a fresh result each time
+Runs full cross-validation for Coxnet, returning the average C-index and
+its spread across folds.
 """
 
-def cv_cindex_sksurv(model_factory, X: pd.DataFrame, y, event: np.ndarray,
-                    n_splits: int = 5, n_repeats: int = 3) -> tuple[float, float]:
+def cv_cindex_coxnet(X: pd.DataFrame, y, event: np.ndarray,
+                      n_splits: int = 5, n_repeats: int = 3,
+                      l1_ratio: float = 0.9) -> tuple[float, float]:
     #builds the fold splitting tool. 5 folds, 3 repeats
     cv = RepeatedStratifiedKFold(
         n_splits=n_splits,
@@ -63,9 +61,42 @@ def cv_cindex_sksurv(model_factory, X: pd.DataFrame, y, event: np.ndarray,
 
     #tr is the training subset and va the validation subset
     for tr, va in cv.split(X, event.astype(int)):
-        #call the factory, fresh, for this exact round of training and val. builds a new untrained pipeline
-        model = model_factory(X.iloc[tr])
-        # trains the model on this rounds training patients 
+        #builds a fresh, untrained pipeline for this exact round of training and val
+        model = make_coxnet_pipeline(X.iloc[tr], l1_ratio=l1_ratio)
+        # trains the model on this rounds training patients
+        model.fit(X.iloc[tr], y[tr])
+        # predict on the held out patients, the validation ones
+        pred = model.predict(X.iloc[va])
+        # grade pred against the true event/time for those same held-out patients — this round's C-index score.
+        scores.append(concordance_index_censored(y[event_name][va], y[time_name][va], pred)[0])
+
+    #after all 15 rounds, average the scores and measure their spread.
+    return float(np.mean(scores)), float(np.std(scores))
+
+
+"""
+Runs full cross-validation for RSF, returning the average C-index and its
+spread across folds.
+"""
+
+def cv_cindex_rsf(X: pd.DataFrame, y, event: np.ndarray,
+                   n_splits: int = 5, n_repeats: int = 3,
+                   n_estimators: int = 500) -> tuple[float, float]:
+    #builds the fold splitting tool. 5 folds, 3 repeats
+    cv = RepeatedStratifiedKFold(
+        n_splits=n_splits,
+        n_repeats=n_repeats,
+        random_state=RANDOM_STATE,
+    )
+    #gets the field names out of y
+    event_name, time_name = y.dtype.names
+    scores = []
+
+    #tr is the training subset and va the validation subset
+    for tr, va in cv.split(X, event.astype(int)):
+        #builds a fresh, untrained pipeline for this exact round of training and val
+        model = make_rsf_pipeline(X.iloc[tr], n_estimators=n_estimators)
+        # trains the model on this rounds training patients
         model.fit(X.iloc[tr], y[tr])
         # predict on the held out patients, the validation ones
         pred = model.predict(X.iloc[va])
@@ -206,8 +237,8 @@ def cv_cindex_formula(X: pd.DataFrame, y, event: np.ndarray, score_array: np.nda
     for Study 1's formula-vs-ML comparison.
 
     Same RepeatedStratifiedKFold(n_splits, n_repeats, random_state=
-    RANDOM_STATE) split as cv_cindex_sksurv, so the folds line up exactly
-    with the ML models' folds -- but there's nothing to fit per fold: a
+    RANDOM_STATE) split as cv_cindex_coxnet/cv_cindex_rsf, so the folds line
+    up exactly with the ML models' folds -- but there's nothing to fit per fold: a
     formula's value for a given patient doesn't depend on which other
     patients are in the training fold, so this just slices
     `score_array[va]` (the already-computed fib4_score/apri_score column,
