@@ -6,14 +6,17 @@
     <!-- It matches the websites width with the devices screen width-->
     <meta name="viewport" content="width=device-width, initial-scale=1.0"> <!--Initial scale = 1 means dont initially zoom in or out-->
     <title>LiverRisk</title>
-    <link rel="stylesheet" href="style.css">
+    <!-- ?v= is a manual cache-buster -- bump it whenever style.css or
+         any script below changes, so browsers can't keep serving a
+         stale cached copy after an edit. -->
+    <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 
     <!-- ============================================================
          SECTION: Site header
          Two stacked rows: the title row, and a tinted nav bar below
-         it. script.js toggles the "active"/"hidden" classes on click
+         it. tabs.js toggles the "active"/"hidden" classes on click
          -- both panels stay in the DOM the whole time, so this is not
          a page navigation and needs no router.
          ============================================================ -->
@@ -63,7 +66,7 @@
                     <!-- The real file input, made invisible by CSS and stretched
                          to cover .file-row, so the whole styled box is clickable -->
                     <input type="file" id="csv-file" name="file" accept=".csv" required>
-                    <!-- Fake "chosen file" label, updated by script.js on change -->
+                    <!-- Fake "chosen file" label, updated by predict.js on change -->
                     <span id="file-name" class="file-name">No file chosen</span>
                 </div>
 
@@ -73,7 +76,7 @@
             <!-- Simple status line: shows "Loading..." or an error message -->
             <p id="status-message"></p>
 
-            <!-- Filled in by script.js with one styled .result-card per
+            <!-- Filled in by predict.js with one styled .result-card per
                  patient in the /predict response -->
             <div id="result-box" class="result-list"></div>
         </section>
@@ -95,7 +98,7 @@
             <!-- "Loading..." / error text while /sample-patients is in flight;
                  cleared once the patient cards below are rendered -->
             <p id="sample-status">Loading sample patients&hellip;</p>
-            <!-- One .patient-card per sample patient, filled in by script.js -->
+            <!-- One .patient-card per sample patient, filled in by build-csv.js -->
             <div id="patient-list" class="patient-list"></div>
 
             <div class="csv-preview-header">
@@ -129,23 +132,36 @@
 
             <div class="rankings-controls">
                 <!-- Which score to rank by. Only meaningful for the
-                     "Training cohort" scope -- disabled/ignored for
-                     "My active patients", see script.js. -->
-                <div class="toggle-group" role="group" aria-label="Scoring method">
+                     "Training cohort"/"My active patients" scopes --
+                     hidden in favor of #disagreement-formula-group
+                     below when scope=Disagreement, since that scope is
+                     always ML-vs-one-formula, not a plain "ML blend".
+                     See rankings.js. -->
+                <div id="method-toggle-group" class="toggle-group" role="group" aria-label="Scoring method">
                     <button type="button" class="toggle-button active" data-method="ml">ML blend</button>
                     <button type="button" class="toggle-button" data-method="fib4">FIB-4</button>
                     <button type="button" class="toggle-button" data-method="apri">APRI</button>
+                </div>
+                <!-- Which formula to compare the ML ranking against.
+                     Only shown for scope=Disagreement -- see rankings.js. -->
+                <div id="disagreement-formula-group" class="toggle-group hidden" role="group" aria-label="Disagreement formula">
+                    <button type="button" class="toggle-button active" data-formula="fib4">FIB-4</button>
+                    <button type="button" class="toggle-button" data-formula="apri">APRI</button>
                 </div>
                 <!-- Which pool of patients the table shows -->
                 <div class="toggle-group" role="group" aria-label="Patient pool">
                     <button type="button" class="toggle-button active" data-scope="training">Training cohort</button>
                     <button type="button" class="toggle-button" data-scope="active">My active patients</button>
+                    <button type="button" class="toggle-button" data-scope="disagreement">Disagreement</button>
                 </div>
             </div>
 
-            <!-- Only shown for method=fib4/apri, where a score can be
-                 missing (a patient without the required lab values) --
-                 ML/weighted scores are never null in the training cohort. -->
+            <!-- Only shown for method=fib4/apri in the "Training cohort"/
+                 "My active patients" scopes, where a score can be missing
+                 (a patient without the required lab values) -- ML/weighted
+                 scores are never null, and the Disagreement scope's rows
+                 are already filtered server-side to patients with a
+                 computable formula score. -->
             <label id="hide-missing-row" class="hide-missing-row hidden">
                 <input type="checkbox" id="hide-missing-checkbox">
                 Hide patients with missing data
@@ -154,7 +170,7 @@
             <!-- "Loading...", an error, or "No active patients yet..." -->
             <p id="rankings-status" class="hint"></p>
 
-            <!-- Filled in by script.js: thead/tbody columns differ by
+            <!-- Filled in by rankings.js: thead/tbody columns differ by
                  scope, so both are built in JS rather than hardcoded here -->
             <div class="table-wrap">
                 <table id="rankings-table" class="rankings-table">
@@ -162,10 +178,21 @@
                     <tbody id="rankings-tbody"></tbody>
                 </table>
             </div>
+
+            <!-- Only shown for scope=Disagreement: explains the rank_gap
+                 sign convention. Text names whichever formula (FIB-4/
+                 APRI) is currently toggled, so it's set by rankings.js
+                 rather than hardcoded here. -->
+            <p id="disagreement-caption" class="hint hidden"></p>
         </section>
 
     </main>
 
-    <script src="script.js"></script>
+    <!-- Same manual cache-buster as style.css above. -->
+    <script src="state.js?v=2"></script>
+    <script src="predict.js?v=2"></script>
+    <script src="build-csv.js?v=2"></script>
+    <script src="rankings.js?v=2"></script>
+    <script src="tabs.js?v=2"></script>
 </body>
 </html>

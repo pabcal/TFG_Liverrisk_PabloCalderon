@@ -108,14 +108,14 @@ h1, h2 {
     color: #1f6f5c;
 }
 
-/* Applied by script.js to whichever tab is currently selected */
+/* Applied by tabs.js to whichever tab is currently selected */
 .tab-button.active {
     font-weight: 700;
     color: #14293d;
     border-bottom-color: #1f6f5c;
 }
 
-/* Applied by script.js to whichever panel is NOT currently selected */
+/* Applied by tabs.js to whichever panel is NOT currently selected */
 .tab-panel.hidden {
     display: none;
 }
@@ -356,7 +356,7 @@ button:disabled {
 }
 
 /* Plain-div bar histogram: bars grow from the bottom by height % (set
-   inline per bar in script.js), not a charting library. The bar the
+   inline per bar in predict.js), not a charting library. The bar the
    patient's own score falls into is highlighted in the accent color. */
 .histogram {
     display: flex;
@@ -508,6 +508,12 @@ button:disabled {
 .toggle-button.active {
     background-color: #1f6f5c;
     color: #ffffff;
+}
+
+/* Swapped for #disagreement-formula-group (and vice versa) depending
+   on the Rankings tab's selected scope -- see rankings.js. */
+.toggle-group.hidden {
+    display: none;
 }
 
 .hide-missing-row {
