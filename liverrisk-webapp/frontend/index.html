@@ -111,7 +111,7 @@
                 <button type="button" id="tab-rankings" class="tab-button" role="tab" aria-selected="false" aria-controls="panel-rankings">
                     Rankings
                 </button>
-                <!-- Starts unselected/hidden; opening it triggers the first /about fetch -->
+                <!-- Starts unselected/hidden; content is fully static, no fetch needed -->
                 <button type="button" id="tab-about" class="tab-button" role="tab" aria-selected="false" aria-controls="panel-about">
                     Behind the Scenes
                 </button>
@@ -268,10 +268,10 @@
              SECTION: "Behind the Scenes" panel
              Everything here was already computed by
              notebooks/04_results_analysis.ipynb -- the dataset-stats
-             numbers come from GET /about (a static JSON file read as-is
-             by about.py), and the four charts are plain PNGs the same
-             notebook saved to frontend/images/. No chart-building code
-             runs in this page at all.
+             numbers are hardcoded below since they never change, and
+             the four charts are plain PNGs the same notebook saved to
+             frontend/images/. No chart-building code runs in this page
+             at all.
              ============================================================ -->
         <section id="panel-about" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-about">
             <h1>Behind the Scenes</h1>
@@ -283,7 +283,7 @@
             <!-- 1. Data source -->
             <h2>The data</h2>
             <ul class="bullet-list">
-                <li><strong>Real, longitudinal hospital records: </strong> patients tracked over up to 22 separate clinic visits across as long as two decades, with 12 different labs and clinical measures recorded at each visit. This resulted in over 255 features.</li>                
+                <li><strong>Real, longitudinal hospital records: </strong> patients tracked over up to 22 separate clinic visits across as long as two decades, with 12 different labs and clinical measures recorded at each visit. This resulted in over 287 features, with most of them being empty if patients haven't taken that test</li>                
                 <li><strong>Two outcomes, both genuinely rare: </strong> right censoring (patients who leave the study before anything happens) affects the majority of the cohort, requiring survival analysis methods rather than standard classification:
                     <ul>
                         <li>A major hepatic event occurs in just 3.75% of patients.</li>
@@ -292,33 +292,62 @@
                 </li>
                 <li><strong>Synthetic, privacy preserving data: </strong> built by a French national research center (ANNITIA, led by IHU ICAN at Pitié-Salpêtrière Hospital, Paris) from real patient records collected between 2001 and 2025. Patient data was regenerated to preserve the real clinical patterns and relationships in the data, without exposing any individual's actual medical record.
                 <ul>
-                    <li>Non-invasive fibrosis tests (FibroTest, AIx-P, FibroScan-type liver stiffness) alongside standard labs, not just basic bloodwork.</li>
+                    <li>Non invasive fibrosis tests (FibroTest, AIx-P, FibroScan-type liver stiffness) alongside standard labs, not just basic bloodwork.</li>
                 </ul>
             </li>
             </ul>
 
             <!-- 2. Dataset stats -->
-            <p id="about-status" class="hint">Loading&hellip;</p>
-            <div id="about-stats-grid" class="stat-grid"></div>
+            <div class="stat-grid">
+                <div class="stat-item">
+                    <div class="stat-value">1,253</div>
+                    <div class="stat-label">Patients</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">(range 1&ndash;19)</div>
+                    <div class="stat-label">Visits per patient (median 4)</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">47 (3.8%)</div>
+                    <div class="stat-label">Hepatic events</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">76 (6.1%)</div>
+                    <div class="stat-label">Deaths</div>
+                </div>
+            </div>
 
-            <!-- 3. Feature engineering -->
-            <h2>Turning 22 visits into 255 features</h2>
+           <!-- 3. Feature engineering -->
+            <h2>Feature engineering: turning 22 censored, gap-filled visits into 255 features</h2>
+            <p class="section-intro">
+                This wasn't clean data. The data was so censored that roughly 21.5% of patients had entirely unknown
+                death status. Two of the three fibrosis tests were missing for 35%
+                of patients. Only 47 of 1,253 patients (3.75%) ever had a hepatic
+                event, meaning the other 96% carry no confirmed outcome at all,
+                just "nothing happened yet, as far as we know." None of this
+                could be dropped or silently filled in without throwing away most of
+                the dataset's real signal.
+            </p>
             <ul class="bullet-list">
-                <li><strong>Every lab collapsed into 12+ engineered signals per marker</strong> &mdash; not just a snapshot value, but first, last, minimum, maximum, mean, standard deviation, missingness rate, and a regression-fitted slope per year, capturing whether a patient's liver markers are trending up or down, not just where they stand today.</li>
-                <li><strong>Clinical formulas computed directly from raw labs</strong> &mdash; FIB-4 and APRI reproduced faithfully from their original published equations, both at baseline and at the most recent visit, so the model can be benchmarked against exactly what a hepatologist already uses.</li>
-                <li><strong>Missingness engineered as a signal in its own right</strong>, not silently imputed away &mdash; the model can learn that a patient with sparse data looks different from one with dense follow-up.</li>
+                <li><strong>Every lab collapsed into 12+ engineered signals per marker. </strong>Not just a snapshot value, but first, last, minimum, maximum, mean, standard deviation, missingness rate, and a regression fitted slope per year, capturing whether a patient's liver markers are trending up or down, not just where they stand today.</li>
+                <li><strong>Missingness turned into a feature, not a gap. </strong>Instead of guessing at a missing value, the model is told directly how much of a patient's record is incomplete, so it can weigh these records differently from dense ones.</li>
+                <li><strong>Censoring handled properly, not discarded. </strong>Patients who never had an event during observation aren't thrown out. Survival analysis methods let every patient's partial information contribute, right up to the point they left the study.</li>
+                <li><strong>Clinical formulas reproduced. </strong>FIB-4 and APRI computed directly from raw labs, both at baseline and at the most recent visit, so the model can be benchmarked against exactly what a hepatologist already uses.</li>
             </ul>
             <p class="highlight-callout">
-                255 total engineered features, distilled from roughly 15 raw clinical measurements &mdash;
-                a &gt;15x expansion designed specifically to capture trajectory, not just a single point in time.
+                About 15 raw lab measurements, each recorded at up to 22 visits per
+                patient, were transformed into 255 features — over 15 times more usable
+                information than the raw data alone. The goal wasn't just more numbers:
+                each feature was built to capture how a patient's labs change over
+                time, and how complete or incomplete their record is.
             </p>
 
             <!-- 4. Why survival analysis -->
             <h2>Why this had to be survival analysis, not standard prediction</h2>
             <ul class="bullet-list">
-                <li><strong>Patients are followed for wildly different lengths of time</strong> &mdash; some for months, some for two decades &mdash; and most never experience the tracked event during observation.</li>
+                <li><strong>Patients are followed for wildly different lengths of time: </strong>some for months, some for two decades, and most never experience the tracked event during observation.</li>
                 <li><strong>A standard classifier would have to either discard every patient without a confirmed outcome, or mislabel &ldquo;haven't had the event yet&rdquo; as &ldquo;never will&rdquo;</strong> &mdash; both approaches would throw away most of the dataset's real signal.</li>
-                <li><strong>Kaplan-Meier estimation</strong> &mdash; the clinical gold standard for exactly this problem &mdash; is used below to show real event-free survival over time, computed directly from data, no model involved.</li>
+                <li><strong>Kaplan-Meier estimation: </strong>shown below to show real event-free survival over time.
             </ul>
             <div class="chart-stack">
                 <img src="images/km_curve_hepatic.png" alt="Kaplan-Meier curve: hepatic event-free survival" class="about-chart">
@@ -327,42 +356,28 @@
 
             <!-- 5. Ensemble -->
             <h2>Three fundamentally different models, independently tuned</h2>
-            <div class="ensemble-diagram">
-                <div class="ensemble-models">
-                    <div class="ensemble-box">Coxnet</div>
-                    <div class="ensemble-box">Random Survival Forest</div>
-                    <div class="ensemble-box">XGBoost</div>
-                </div>
-                <div class="ensemble-arrows" aria-hidden="true">
-                    <span>&#8600;</span><span>&#8595;</span><span>&#8599;</span>
-                </div>
-                <div class="ensemble-box ensemble-box-final">Rank Blend</div>
-            </div>
             <ul class="bullet-list">
-                <li><strong>Coxnet (penalized Cox regression), Random Survival Forest (500 trees), and XGBoost (gradient-boosted survival trees)</strong> &mdash; three structurally unrelated approaches, deliberately combined so no single model's blind spots dominate the final score.</li>
-                <li><strong>Every model's hyperparameters were tuned independently, per outcome</strong> &mdash; not shared defaults. A dedicated cross-validated search discovered, for example, that a heavily regularized linear model works best for the rare hepatic-event endpoint, while a much less conservative configuration wins for mortality &mdash; a real, data-driven finding, not a guess.</li>
-                <li><strong>Rank-based blending, not simple averaging</strong> &mdash; each model's predictions are converted to percentiles before being combined, so a model with a wider numeric scale can never silently dominate the ensemble.</li>
+                <li><strong>Coxnet (penalized Cox regression), Random Survival Forest (500 trees), and XGBoost (gradient boosted survival trees): </strong>three structurally unrelated approaches, deliberately combined so no single model's blind spots dominate the final score.</li>
+                <li><strong>Every model's hyperparameters were tuned independently.</strong> A cross validated search discovered, for example, that a heavily regularized linear model works best for the rare hepatic event endpoint, while a much less conservative configuration wins for mortality.</li>
+                <li><strong>Rank-based blending, not simple averaging.</strong> Each model's predictions are converted to percentiles before being combined, so a model with a wider numeric scale can never silently dominate the ensemble.</li>
             </ul>
             <p class="highlight-callout">
-                The blend weighting itself was discovered, not assumed &mdash; a systematic grid search over every
-                valid weight combination found that the strongest hepatic-event predictions actually come from the
-                forest model alone, while mortality benefits from a genuine three-way blend &mdash; an asymmetric
-                result the model was allowed to find on its own, rather than a fixed formula imposed on it.
+                The blend weighting itself was also discovered through a grid search over every
+                valid weight combination. The findings were that the strongest hepatic event predictions actually come from the
+                forest model alone, while mortality benefits from a three way blend.
             </p>
 
             <!-- 6. Results -->
-            <h2>How well it actually works &mdash; validated, not just measured</h2>
+            <h2>How well it actually works, using the C-Index
             <div class="weighted-risk">
-                <div id="about-cindex" class="weighted-risk-number">&mdash;</div>
+                <div class="weighted-risk-number">0.849</div>
                 <div class="weighted-risk-label">
-                    Weighted concordance index (0.7 &times; hepatic + 0.3 &times; death), the
-                    competition's official metric.
+                    Weighted concordance index (0.7 &times; hepatic + 0.3 &times; death)
                 </div>
             </div>
             <ul class="bullet-list">
-                <li><strong>Weighted concordance index: 0.849</strong> &mdash; the official competition metric (70% hepatic-event ranking accuracy, 30% mortality), evaluated with proper cross-validation so every patient is scored only by a model that never saw them during training.</li>
-                <li><strong>Benchmarked against real clinical formulas, with statistical rigor</strong> &mdash; not just &ldquo;our score is higher.&rdquo; A bootstrap resampling analysis (1,000 resamples) was used to test whether the model's advantage over FIB-4 and APRI is statistically real or could be chance. Result: a statistically significant, large advantage for predicting mortality &mdash; and an honest, reported tie for the hepatic-event endpoint, where the simpler formula holds its own.</li>
-                <li><strong>That kind of finding &mdash; reporting a null result where the data actually shows one, rather than only the wins</strong> &mdash; is deliberately part of the validation, not an omission.</li>
+                <li><strong>Weighted concordance index: 0.849</strong> &mdash; the official metric set by ANNITIA and IHU ICAN (70% hepatic event ranking accuracy, 30% mortality), evaluated with cross validation so every patient is scored only by a model that never saw them during training.</li>
+                <li><strong>Benchmarked against real clinical formulas, </strong>not just &ldquo; the ML score is higher.&rdquo; A bootstrap resampling analysis (1,000 resamples) was used to test whether the model's advantage over FIB-4 and APRI is actually real and not a result of chance.
             </ul>
             <div class="chart-stack">
                 <img src="images/feature_importance_hepatic.png" alt="Top features by permutation importance, hepatic event model" class="about-chart">
@@ -379,7 +394,6 @@
     <script src="predict.js?v=4"></script>
     <script src="build-csv.js?v=2"></script>
     <script src="rankings.js?v=3"></script>
-    <script src="about.js?v=1"></script>
     <script src="tabs.js?v=3"></script>
     <script src="landing.js?v=1"></script>
 </body>

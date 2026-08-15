@@ -8,7 +8,7 @@ return a risk score for each patient.
 
 Startup loading and shared scoring helpers live in models_loader.py.
 The routes are split into their own modules: predict.py,
-sample_patients.py, rankings.py, disagreement.py, about.py.
+sample_patients.py, rankings.py, disagreement.py.
 """
 from __future__ import annotations
 
@@ -21,7 +21,6 @@ from predict import router as predict_router
 from sample_patients import router as sample_patients_router
 from rankings import router as rankings_router
 from disagreement import router as disagreement_router
-from about import router as about_router
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -31,7 +30,6 @@ app.include_router(predict_router)
 app.include_router(sample_patients_router)
 app.include_router(rankings_router)
 app.include_router(disagreement_router)
-app.include_router(about_router)
 
 
 # --------------------------------------------------------------------
