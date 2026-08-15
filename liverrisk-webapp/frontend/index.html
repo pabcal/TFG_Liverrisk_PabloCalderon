@@ -9,9 +9,82 @@
     <!-- ?v= is a manual cache-buster -- bump it whenever style.css or
          any script below changes, so browsers can't keep serving a
          stale cached copy after an edit. -->
-    <link rel="stylesheet" href="style.css?v=2">
+    <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
+
+    <!-- ============================================================
+         SECTION: Landing screen
+         A genuine first screen, not a banner on top of the app: full
+         viewport height, dark abstract SVG background, and the single
+         next action ("Start Predicting"). Visible by default; landing.js
+         hides this and reveals #app-screen on click, one-way -- there's
+         no path back to this screen from inside the app.
+         ============================================================ -->
+    <div id="landing-screen">
+        <svg class="hero-bg" viewBox="0 0 1200 800" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0,120 C200,60 350,200 550,140 S900,40 1200,110" fill="none" stroke="#5fb8a3" stroke-width="1.5" opacity="0.18" />
+            <path d="M0,220 C180,260 380,150 600,210 S950,300 1200,230" fill="none" stroke="#5fb8a3" stroke-width="1.5" opacity="0.14" />
+            <path d="M0,60 C220,140 330,10 520,80 S850,160 1200,70" fill="none" stroke="#a8ded0" stroke-width="1" opacity="0.12" />
+            <path d="M0,320 C240,270 420,360 640,300 S980,220 1200,310" fill="none" stroke="#5fb8a3" stroke-width="1.5" opacity="0.16" />
+            <path d="M0,460 C260,400 440,520 660,450 S1000,380 1200,460" fill="none" stroke="#a8ded0" stroke-width="1" opacity="0.14" />
+            <path d="M0,560 C220,620 400,500 600,570 S950,650 1200,560" fill="none" stroke="#5fb8a3" stroke-width="1.5" opacity="0.12" />
+            <path d="M0,680 C240,630 450,710 660,650 S1000,590 1200,670" fill="none" stroke="#5fb8a3" stroke-width="1" opacity="0.14" />
+            <path d="M0,760 C260,730 450,790 660,740 S1000,690 1200,760" fill="none" stroke="#a8ded0" stroke-width="1" opacity="0.10" />
+        </svg>
+        <div class="landing-content">
+            <!-- Group 1: title + tagline -- centered, the only centered
+                 prose on the screen. -->
+            <div class="landing-group landing-intro">
+                <!-- Not an <h1> -- each tab panel inside #app-screen already
+                     has its own <h1> for its content; this is decorative
+                     page branding, only ever one heading level on screen
+                     at a time since the two screens are mutually exclusive. -->
+                <p class="hero-title" role="heading" aria-level="1">LiverRisk</p>
+                <p class="hero-tagline">A machine learning tool for ranking MASLD patient risk.</p>
+            </div>
+
+            <!-- Group 2: what it is / what it isn't -- left-aligned, reads
+                 like a normal paragraph + notice rather than a centered
+                 slogan. -->
+            <div class="landing-group landing-about">
+                <p class="about-text">
+                    LiverRisk ranks MASLD (fatty liver disease) patients by estimated risk of a
+                    major hepatic event or death, using a blend of three survival models trained
+                    on a longitudinal patient cohort. It produces a relative ranking within a
+                    reference population, not a diagnosis, a probability, or a substitute for
+                    clinical judgment.
+                </p>
+
+                <p class="disclaimer-banner">
+                    <strong>Research prototype trained on synthetic patient data.</strong>
+                </p>
+            </div>
+
+            <!-- Group 3: how-to-use -- its own translucent panel so it
+                 reads as a distinct module, not more floating text. -->
+            <div class="landing-group landing-howto-panel">
+                <ol class="how-to-list">
+                    <li><strong>Predict</strong> &mdash; upload a patient CSV to get a risk score and percentile.</li>
+                    <li><strong>Rankings</strong> &mdash; see where a patient falls against the training cohort or your own scored patients.</li>
+                    <li><strong>Behind the Scenes</strong> &mdash; the data, the models, and how well it all holds up.</li>
+                </ol>
+            </div>
+
+            <!-- Final call to action -- centered, clearly separated from
+                 everything above it. -->
+            <button type="button" id="start-predicting-button" class="start-button">Start Predicting</button>
+        </div>
+    </div>
+
+    <!-- ============================================================
+         SECTION: App screen
+         Everything below is the existing app, completely unchanged --
+         header, nav tabs, and all four tab panels. Hidden by default;
+         revealed once by landing.js's click handler and never hidden
+         again (no back button to the landing screen).
+         ============================================================ -->
+    <div id="app-screen" class="hidden">
 
     <!-- ============================================================
          SECTION: Site header
@@ -38,6 +111,10 @@
                 <!-- Starts unselected/hidden; opening it triggers the first /rankings fetch -->
                 <button type="button" id="tab-rankings" class="tab-button" role="tab" aria-selected="false" aria-controls="panel-rankings">
                     Rankings
+                </button>
+                <!-- Starts unselected/hidden; opening it triggers the first /about fetch -->
+                <button type="button" id="tab-about" class="tab-button" role="tab" aria-selected="false" aria-controls="panel-about">
+                    Behind the Scenes
                 </button>
             </nav>
         </div>
@@ -186,13 +263,115 @@
             <p id="disagreement-caption" class="hint hidden"></p>
         </section>
 
+        <!-- ============================================================
+             SECTION: "Behind the Scenes" panel
+             Everything here was already computed by
+             notebooks/04_results_analysis.ipynb -- the dataset-stats
+             numbers come from GET /about (a static JSON file read as-is
+             by about.py), and the four charts are plain PNGs the same
+             notebook saved to frontend/images/. No chart-building code
+             runs in this page at all.
+             ============================================================ -->
+        <section id="panel-about" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-about">
+            <h1>Behind the Scenes</h1>
+            <p class="intro">
+                What's actually driving these predictions -- the data, the
+                models, and how well it all holds up, validated rather than
+                assumed.
+            </p>
+
+            <!-- 1. Data source -->
+            <h2>The data</h2>
+            <ul class="bullet-list">
+                <li><strong>Real, longitudinal hospital records</strong> &mdash; patients tracked over up to 22 separate clinic visits across as long as two decades, not a single snapshot.</li>
+                <li><strong>Two outcomes, both genuinely rare</strong> &mdash; a major hepatic event occurs in just 3.75% of patients; right-censoring (patients who leave the study before anything happens) affects the majority of the cohort, requiring survival-analysis methods rather than standard classification.</li>
+                <li><strong>Synthetic, privacy-preserving cohort</strong> derived from real hospital data, built by a French national research consortium (ANNITIA / IHU ICAN) to make rigorous fibrosis-progression research possible without exposing real patient records.</li>
+            </ul>
+
+            <!-- 2. Dataset stats -->
+            <p id="about-status" class="hint">Loading&hellip;</p>
+            <div id="about-stats-grid" class="stat-grid"></div>
+
+            <!-- 3. Feature engineering -->
+            <h2>Turning 22 visits into 255 features</h2>
+            <ul class="bullet-list">
+                <li><strong>Every lab collapsed into 12+ engineered signals per marker</strong> &mdash; not just a snapshot value, but first, last, minimum, maximum, mean, standard deviation, missingness rate, and a regression-fitted slope per year, capturing whether a patient's liver markers are trending up or down, not just where they stand today.</li>
+                <li><strong>Clinical formulas computed directly from raw labs</strong> &mdash; FIB-4 and APRI reproduced faithfully from their original published equations, both at baseline and at the most recent visit, so the model can be benchmarked against exactly what a hepatologist already uses.</li>
+                <li><strong>Missingness engineered as a signal in its own right</strong>, not silently imputed away &mdash; the model can learn that a patient with sparse data looks different from one with dense follow-up.</li>
+            </ul>
+            <p class="highlight-callout">
+                255 total engineered features, distilled from roughly 15 raw clinical measurements &mdash;
+                a &gt;15x expansion designed specifically to capture trajectory, not just a single point in time.
+            </p>
+
+            <!-- 4. Why survival analysis -->
+            <h2>Why this had to be survival analysis, not standard prediction</h2>
+            <ul class="bullet-list">
+                <li><strong>Patients are followed for wildly different lengths of time</strong> &mdash; some for months, some for two decades &mdash; and most never experience the tracked event during observation.</li>
+                <li><strong>A standard classifier would have to either discard every patient without a confirmed outcome, or mislabel &ldquo;haven't had the event yet&rdquo; as &ldquo;never will&rdquo;</strong> &mdash; both approaches would throw away most of the dataset's real signal.</li>
+                <li><strong>Kaplan-Meier estimation</strong> &mdash; the clinical gold standard for exactly this problem &mdash; is used below to show real event-free survival over time, computed directly from data, no model involved.</li>
+            </ul>
+            <div class="chart-stack">
+                <img src="images/km_curve_hepatic.png" alt="Kaplan-Meier curve: hepatic event-free survival" class="about-chart">
+                <img src="images/km_curve_death.png" alt="Kaplan-Meier curve: overall survival" class="about-chart">
+            </div>
+
+            <!-- 5. Ensemble -->
+            <h2>Three fundamentally different models, independently tuned</h2>
+            <div class="ensemble-diagram">
+                <div class="ensemble-models">
+                    <div class="ensemble-box">Coxnet</div>
+                    <div class="ensemble-box">Random Survival Forest</div>
+                    <div class="ensemble-box">XGBoost</div>
+                </div>
+                <div class="ensemble-arrows" aria-hidden="true">
+                    <span>&#8600;</span><span>&#8595;</span><span>&#8599;</span>
+                </div>
+                <div class="ensemble-box ensemble-box-final">Rank Blend</div>
+            </div>
+            <ul class="bullet-list">
+                <li><strong>Coxnet (penalized Cox regression), Random Survival Forest (500 trees), and XGBoost (gradient-boosted survival trees)</strong> &mdash; three structurally unrelated approaches, deliberately combined so no single model's blind spots dominate the final score.</li>
+                <li><strong>Every model's hyperparameters were tuned independently, per outcome</strong> &mdash; not shared defaults. A dedicated cross-validated search discovered, for example, that a heavily regularized linear model works best for the rare hepatic-event endpoint, while a much less conservative configuration wins for mortality &mdash; a real, data-driven finding, not a guess.</li>
+                <li><strong>Rank-based blending, not simple averaging</strong> &mdash; each model's predictions are converted to percentiles before being combined, so a model with a wider numeric scale can never silently dominate the ensemble.</li>
+            </ul>
+            <p class="highlight-callout">
+                The blend weighting itself was discovered, not assumed &mdash; a systematic grid search over every
+                valid weight combination found that the strongest hepatic-event predictions actually come from the
+                forest model alone, while mortality benefits from a genuine three-way blend &mdash; an asymmetric
+                result the model was allowed to find on its own, rather than a fixed formula imposed on it.
+            </p>
+
+            <!-- 6. Results -->
+            <h2>How well it actually works &mdash; validated, not just measured</h2>
+            <div class="weighted-risk">
+                <div id="about-cindex" class="weighted-risk-number">&mdash;</div>
+                <div class="weighted-risk-label">
+                    Weighted concordance index (0.7 &times; hepatic + 0.3 &times; death), the
+                    competition's official metric.
+                </div>
+            </div>
+            <ul class="bullet-list">
+                <li><strong>Weighted concordance index: 0.849</strong> &mdash; the official competition metric (70% hepatic-event ranking accuracy, 30% mortality), evaluated with proper cross-validation so every patient is scored only by a model that never saw them during training.</li>
+                <li><strong>Benchmarked against real clinical formulas, with statistical rigor</strong> &mdash; not just &ldquo;our score is higher.&rdquo; A bootstrap resampling analysis (1,000 resamples) was used to test whether the model's advantage over FIB-4 and APRI is statistically real or could be chance. Result: a statistically significant, large advantage for predicting mortality &mdash; and an honest, reported tie for the hepatic-event endpoint, where the simpler formula holds its own.</li>
+                <li><strong>That kind of finding &mdash; reporting a null result where the data actually shows one, rather than only the wins</strong> &mdash; is deliberately part of the validation, not an omission.</li>
+            </ul>
+            <div class="chart-stack">
+                <img src="images/feature_importance_hepatic.png" alt="Top features by permutation importance, hepatic event model" class="about-chart">
+                <img src="images/feature_importance_death.png" alt="Top features by permutation importance, death model" class="about-chart">
+            </div>
+        </section>
+
     </main>
+
+    </div><!-- #app-screen -->
 
     <!-- Same manual cache-buster as style.css above. -->
     <script src="state.js?v=2"></script>
-    <script src="predict.js?v=2"></script>
+    <script src="predict.js?v=3"></script>
     <script src="build-csv.js?v=2"></script>
     <script src="rankings.js?v=2"></script>
-    <script src="tabs.js?v=2"></script>
+    <script src="about.js?v=1"></script>
+    <script src="tabs.js?v=3"></script>
+    <script src="landing.js?v=1"></script>
 </body>
 </html>

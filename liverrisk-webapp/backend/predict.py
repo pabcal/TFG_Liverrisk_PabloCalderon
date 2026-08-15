@@ -30,6 +30,8 @@ from models_loader import (
     score_one_endpoint,
 )
 
+from explain import explain_patient
+
 from liverrisk.clinical_scores import compute_fib4_apri
 from liverrisk.features import build_patient_features
 
@@ -92,6 +94,7 @@ async def predict(file: UploadFile = File(...)):
 
         risk_hepatic_event, hepatic_percentile = score_one_endpoint(one_patient, "hep")
         risk_death, death_percentile = score_one_endpoint(one_patient, "death")
+        risk_explanation = explain_patient(one_patient)
 
         # Same formula build_submission() (scripts/train.py) uses to turn
         # a test-set patient's two blended scores into one weighted_risk.
@@ -123,6 +126,7 @@ async def predict(file: UploadFile = File(...)):
             "hepatic_percentile": hepatic_percentile,
             "risk_death": risk_death,
             "death_percentile": death_percentile,
+            "risk_explanation": risk_explanation,
             "weighted_risk": weighted_risk,
             "weighted_percentile": weighted_percentile,
             "fib4_score": fib4_score,

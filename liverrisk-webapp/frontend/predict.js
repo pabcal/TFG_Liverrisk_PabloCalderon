@@ -174,6 +174,31 @@ function buildFormulaColumn(name, percentile) {
     return col;
 }
 
+// "Why this score" section: a plain-language sentence naming this
+// patient's top SHAP-ranked features (result.risk_explanation, computed
+// live per patient in explain.py). Falls back to a plain unavailable
+// line instead of an empty section when the backend couldn't compute one.
+function buildRiskExplanation(result) {
+    const section = document.createElement("div");
+    section.className = "risk-explanation";
+
+    const heading = document.createElement("h3");
+    heading.textContent = "Why this score";
+    section.appendChild(heading);
+
+    const text = document.createElement("p");
+    if (result.risk_explanation) {
+        text.className = "risk-explanation-text";
+        text.textContent = result.risk_explanation;
+    } else {
+        text.className = "risk-explanation-text unavailable";
+        text.textContent = "Explanation not available for this patient.";
+    }
+    section.appendChild(text);
+
+    return section;
+}
+
 // Row that pushes this patient's already-computed scores into the
 // in-memory activePatients pool (see state.js), for the Rankings tab's
 // "My active patients" scope. Uses a plain inline text input for the
@@ -283,6 +308,8 @@ function buildResultCard(result, index, total) {
     columns.appendChild(buildFormulaColumn("APRI", result.apri_percentile));
     comparison.appendChild(columns);
     card.appendChild(comparison);
+
+    card.appendChild(buildRiskExplanation(result));
 
     card.appendChild(buildAddToPoolRow(result));
 

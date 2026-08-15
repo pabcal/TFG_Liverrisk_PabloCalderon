@@ -35,6 +35,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+import shap
 
 # --------------------------------------------------------------------
 # Make the "liverrisk" package (which lives at the repo root, not
@@ -51,6 +52,7 @@ from liverrisk.features import (  # noqa: E402
     build_patient_features,
     load_features,
 )
+from liverrisk.models import RANDOM_STATE  # noqa: E402
 
 MODELS_DIR = REPO_ROOT / "models"
 PROCESSED_DIR = REPO_ROOT / "liverrisk" / "data" / "processed"
@@ -173,6 +175,37 @@ TRAIN_WEIGHTED_SCORES = (
 _train_fib4_apri = compute_fib4_apri(X_HEP, "hep")
 TRAIN_FIB4_SCORES = _train_fib4_apri["fib4_score"].dropna().to_numpy()
 TRAIN_APRI_SCORES = _train_fib4_apri["apri_score"].dropna().to_numpy()
+
+# --------------------------------------------------------------------
+# SHAP explainer for per-patient explanations (explain.py).
+#
+# rsf_hep is what drives the hepatic blend today (blend weight 1.0, see
+# DISTRIBUTION_NOTES below), so it's the only model explained. It's a
+# Pipeline of ("pre", ColumnTransformer) + ("rsf", RandomSurvivalForest)
+# -- KernelExplainer needs a plain array-in/array-out function, so it
+# wraps the "rsf" step's .predict directly and everything (background
+# sample, the training cohort) is passed through "pre" first, once,
+# here at startup. Only the per-patient explainer.shap_values() call in
+# explain.py runs per-request.
+# --------------------------------------------------------------------
+print("[startup] Preparing SHAP background sample for hepatic-event explanations...")
+
+RSF_HEP_PIPELINE = MODELS["rsf_hep"]
+RSF_HEP_PREPROCESSOR = RSF_HEP_PIPELINE.named_steps["pre"]
+RSF_HEP_MODEL = RSF_HEP_PIPELINE.named_steps["rsf"]
+
+_X_HEP_TRANSFORMED = RSF_HEP_PREPROCESSOR.transform(X_HEP)
+if hasattr(_X_HEP_TRANSFORMED, "toarray"):
+    _X_HEP_TRANSFORMED = _X_HEP_TRANSFORMED.toarray()
+
+RSF_HEP_FEATURE_NAMES = list(RSF_HEP_PREPROCESSOR.get_feature_names_out())
+X_HEP_TRANSFORMED = pd.DataFrame(_X_HEP_TRANSFORMED, columns=RSF_HEP_FEATURE_NAMES, index=X_HEP.index)
+
+SHAP_BACKGROUND = shap.sample(X_HEP_TRANSFORMED, 30, random_state=RANDOM_STATE)
+
+RSF_HEP_EXPLAINER = shap.KernelExplainer(RSF_HEP_MODEL.predict, SHAP_BACKGROUND)
+
+print(f"[startup] SHAP background ready: {SHAP_BACKGROUND.shape[0]} patients x {SHAP_BACKGROUND.shape[1]} features.")
 
 
 # --------------------------------------------------------------------

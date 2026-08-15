@@ -37,5 +37,12 @@ tabButtons.forEach(function (button) {
         if (button.id === "tab-rankings") {
             renderRankingsTable();
         }
+
+        // Same lazy-load idea for "Behind the Scenes": fetch GET /about
+        // the first time this tab is opened. aboutData starts out null
+        // (see about.js), so this only fires once.
+        if (button.id === "tab-about" && !aboutData) {
+            loadAboutStats();
+        }
     });
 });

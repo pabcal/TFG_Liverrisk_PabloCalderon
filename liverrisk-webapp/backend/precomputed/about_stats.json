@@ -1,0 +1,11 @@
+{
+  "n_patients": 1253,
+  "median_visits": 4.0,
+  "min_visits": 1,
+  "max_visits": 19,
+  "hepatic_event_count": 47,
+  "hepatic_event_rate_pct": 3.8,
+  "death_count": 76,
+  "death_rate_pct": 6.1,
+  "weighted_cindex": 0.849
+}
