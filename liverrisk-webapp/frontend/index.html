@@ -9,7 +9,7 @@
     <!-- ?v= is a manual cache-buster -- bump it whenever style.css or
          any script below changes, so browsers can't keep serving a
          stale cached copy after an edit. -->
-    <link rel="stylesheet" href="style.css?v=7">
+    <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 
@@ -51,13 +51,12 @@
                 <p class="about-text">
                     LiverRisk ranks MASLD (fatty liver disease) patients by estimated risk of a
                     major hepatic event or death, using a blend of three survival models trained
-                    on a longitudinal patient cohort. It produces a relative ranking within a
-                    reference population, not a diagnosis, a probability, or a substitute for
-                    clinical judgment.
+                    on a heavily censored dataset filled with missing values. It produces a relative ranking within a
+                    reference population based on risk. Rank 1 being the highest risk patient.
                 </p>
 
                 <p class="disclaimer-banner">
-                    <strong>Research prototype trained on synthetic patient data.</strong>
+                    <strong>Prototype trained on synthetic patient data.</strong>
                 </p>
             </div>
 
@@ -65,9 +64,9 @@
                  reads as a distinct module, not more floating text. -->
             <div class="landing-group landing-howto-panel">
                 <ol class="how-to-list">
-                    <li><strong>Predict</strong> &mdash; upload a patient CSV to get a risk score and percentile.</li>
-                    <li><strong>Rankings</strong> &mdash; see where a patient falls against the training cohort or your own scored patients.</li>
-                    <li><strong>Behind the Scenes</strong> &mdash; the data, the models, and how well it all holds up.</li>
+                    <li><strong>Predict: </strong>upload a patient CSV to get a risk score and percentile. You can also try it out using the "Build a test CSV" tool to assemble a file from real, already recorded patients.</li>
+                    <li><strong>Rankings: </strong> see where a patient falls against the training dataset or your own scored patients.</li>
+                    <li><strong>Behind the Scenes: </strong> the data, the models, and how the ML approach compares to traditional clinical formulas</li>
                 </ol>
             </div>
 
@@ -202,9 +201,10 @@
         <section id="panel-rankings" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-rankings">
             <h1>Rankings</h1>
             <p class="intro">
-                See where a patient falls among the training cohort, by
-                ML blend or by a clinical formula -- or rank the patients
-                you've scored yourself in the Predict tab.
+                See how a transplant style priority list would look if ranked by
+                LiverRisk's ML model, instead of a formula like MELD or FIB-4, and
+                where the two would disagree.
+
             </p>
 
             <div class="rankings-controls">
@@ -227,9 +227,10 @@
                 </div>
                 <!-- Which pool of patients the table shows -->
                 <div class="toggle-group" role="group" aria-label="Patient pool">
-                    <button type="button" class="toggle-button active" data-scope="training">Training cohort</button>
-                    <button type="button" class="toggle-button" data-scope="active">My active patients</button>
+                    <button type="button" class="toggle-button active" data-scope="training">Full transplant list</button>
                     <button type="button" class="toggle-button" data-scope="disagreement">Disagreement</button>
+                    <button type="button" class="toggle-button" data-scope="active">My active patients</button>
+
                 </div>
             </div>
 
@@ -275,17 +276,25 @@
         <section id="panel-about" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-about">
             <h1>Behind the Scenes</h1>
             <p class="intro">
-                What's actually driving these predictions -- the data, the
-                models, and how well it all holds up, validated rather than
-                assumed.
+                See what's actually driving these predictions. The data, the
+                models, and how well it all holds up.
             </p>
 
             <!-- 1. Data source -->
             <h2>The data</h2>
             <ul class="bullet-list">
-                <li><strong>Real, longitudinal hospital records</strong> &mdash; patients tracked over up to 22 separate clinic visits across as long as two decades, not a single snapshot.</li>
-                <li><strong>Two outcomes, both genuinely rare</strong> &mdash; a major hepatic event occurs in just 3.75% of patients; right-censoring (patients who leave the study before anything happens) affects the majority of the cohort, requiring survival-analysis methods rather than standard classification.</li>
-                <li><strong>Synthetic, privacy-preserving cohort</strong> derived from real hospital data, built by a French national research consortium (ANNITIA / IHU ICAN) to make rigorous fibrosis-progression research possible without exposing real patient records.</li>
+                <li><strong>Real, longitudinal hospital records: </strong> patients tracked over up to 22 separate clinic visits across as long as two decades, with 12 different labs and clinical measures recorded at each visit. This resulted in over 255 features.</li>                
+                <li><strong>Two outcomes, both genuinely rare: </strong> right censoring (patients who leave the study before anything happens) affects the majority of the cohort, requiring survival analysis methods rather than standard classification:
+                    <ul>
+                        <li>A major hepatic event occurs in just 3.75% of patients.</li>
+                        <li>Death (of known status) occurs in 7.7% of patients.</li>
+                    </ul>
+                </li>
+                <li><strong>Synthetic, privacy preserving data: </strong> built by a French national research center (ANNITIA, led by IHU ICAN at Pitié-Salpêtrière Hospital, Paris) from real patient records collected between 2001 and 2025. Patient data was regenerated to preserve the real clinical patterns and relationships in the data, without exposing any individual's actual medical record.
+                <ul>
+                    <li>Non-invasive fibrosis tests (FibroTest, AIx-P, FibroScan-type liver stiffness) alongside standard labs, not just basic bloodwork.</li>
+                </ul>
+            </li>
             </ul>
 
             <!-- 2. Dataset stats -->
@@ -367,9 +376,9 @@
 
     <!-- Same manual cache-buster as style.css above. -->
     <script src="state.js?v=2"></script>
-    <script src="predict.js?v=3"></script>
+    <script src="predict.js?v=4"></script>
     <script src="build-csv.js?v=2"></script>
-    <script src="rankings.js?v=2"></script>
+    <script src="rankings.js?v=3"></script>
     <script src="about.js?v=1"></script>
     <script src="tabs.js?v=3"></script>
     <script src="landing.js?v=1"></script>

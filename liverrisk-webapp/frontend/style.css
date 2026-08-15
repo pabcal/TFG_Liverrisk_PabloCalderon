@@ -81,15 +81,15 @@ h1, h2 {
 .hero-title {
     font-family: Georgia, "Times New Roman", serif;
     font-weight: 700;
-    font-size: 3rem;
+    font-size: 3.6rem;
     color: #ffffff;
     margin: 0;
     line-height: 1.1;
 }
 
 .hero-tagline {
-    font-size: 1.15rem;
-    color: #cfe3dc;
+    font-size: 1.35rem;
+    color: #f2faf7;
     margin: 0.6rem 0 0; /* small -- within the title group */
     line-height: 1.5;
 }
@@ -99,8 +99,8 @@ h1, h2 {
 }
 
 .about-text {
-    color: #d7e2de;
-    font-size: 1rem;
+    color: #f2faf7;
+    font-size: 1.15rem;
     line-height: 1.6;
     margin: 0 0 0.85rem; /* small -- within the about group */
 }
@@ -133,8 +133,8 @@ h1, h2 {
 .how-to-list {
     margin: 0;
     padding-left: 1.4rem;
-    color: #d7e2de;
-    font-size: 1rem;
+    color: #f2faf7;
+    font-size: 1.15rem;
     line-height: 1.6;
 }
 
@@ -156,7 +156,7 @@ h1, h2 {
    one thing on the page meant to draw the eye. Sits clearly further
    from the how-to panel than the panel sits from the about group. */
 .start-button {
-    font-size: 1.05rem;
+    font-size: 1.2rem;
     padding: 0 2rem;
     min-height: 52px;
     margin-top: 3.5rem;
@@ -741,6 +741,18 @@ button:disabled {
     background-color: #f7f9f8;
 }
 
+/* "Full transplant list" rows inserted client-side from activePatients
+   (see buildMergedRankedRows() in rankings.js) -- a light green tint so
+   they read as "your patient, placed among the cohort" at a glance,
+   distinct from the plain white/hover backgrounds of real training rows. */
+.rankings-table tbody tr.inserted-patient {
+    background-color: #e6f4ec;
+}
+
+.rankings-table tbody tr.inserted-patient:hover {
+    background-color: #d8eee1;
+}
+
 /* Small muted tag for a real historical event ("Event, 12.3 yr") --
    neutral gray, not the accent color, so it doesn't compete with it. */
 .outcome-tag {
@@ -1043,11 +1055,11 @@ button:disabled {
     }
 
     .hero-title {
-        font-size: 2.1rem;
+        font-size: 2.4rem;
     }
 
     .hero-tagline {
-        font-size: 1rem;
+        font-size: 1.15rem;
     }
 
     .landing-group + .landing-group {

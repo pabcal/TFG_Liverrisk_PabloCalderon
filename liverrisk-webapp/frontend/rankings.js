@@ -49,6 +49,44 @@ function activePatientScore(patient, method) {
     return patient.weighted_risk;
 }
 
+// Builds the full merged list -- every training row plus one row per
+// activePatients entry, inserted wherever its score sorts -- shared by
+// the "Full transplant list" table (renderTrainingScope) and the "My
+// active patients" scope's "Rank in full list" column (renderActiveScope).
+// Never mutates trainingRows or recomputes any training row's own
+// score/percentile. A row's displayed rank must always come from its
+// *position in this merged, sorted array*, never from a training row's
+// original backend-assigned `rank` field -- once patients are inserted,
+// that original field is stale for every row at or below the insertion
+// point (two rows can otherwise show the same number).
+function buildMergedRankedRows(trainingRows, method) {
+    let rows = trainingRows.slice();
+    activePatients.forEach(function (patient) {
+        const score = activePatientScore(patient, method);
+        rows.push({
+            patient_id: patient.label,
+            score: score,
+            percentile: null,
+            age_at_baseline: patient.age_at_baseline,
+            visit_count: patient.visit_count,
+            outcome: null,
+            isInserted: true,
+            patient: patient,
+        });
+    });
+
+    // Descending by score, null-score rows always last -- same
+    // convention build_training_ranking_rows() uses server-side.
+    rows.sort(function (a, b) {
+        if ((a.score === null) !== (b.score === null)) {
+            return a.score === null ? 1 : -1;
+        }
+        return a.score === null ? 0 : b.score - a.score;
+    });
+
+    return rows;
+}
+
 
 // ====================================================================
 // SECTION: "Rankings" tab -- fetch training-cohort rankings
@@ -108,9 +146,11 @@ function renderTrainingTableHead() {
 
 // Header row for the "My active patients" scope (no percentile column,
 // a blank header cell over the remove buttons instead of "Outcome").
+// "Rank in full list" is this patient's 1-based position in the full
+// merged (training + active) list -- see buildMergedRankedRows().
 function renderActiveTableHead() {
     const tr = document.createElement("tr");
-    ["Rank", "Patient", "Score (" + methodLabel(rankingsMethod) + ")", "Age", "Visits", ""].forEach(function (label) {
+    ["Rank", "Patient", "Score (" + methodLabel(rankingsMethod) + ")", "Rank in full list", "Age", "Visits", ""].forEach(function (label) {
         const th = document.createElement("th");
         th.textContent = label;
         tr.appendChild(th);
@@ -125,6 +165,22 @@ function formatScoreWithPercentile(score, percentile) {
         return "Missing lab values";
     }
     return score.toFixed(2) + " (" + ordinal(percentile) + " percentile)";
+}
+
+// Score cell for one row in the "Full transplant list" table. Real
+// training rows get their backend-computed percentile; inserted
+// active-pool rows don't have one (computing a percentile would mean
+// building a whole reference distribution client-side, which is exactly
+// the "no new computation for training patients" this feature avoids),
+// so they just show the plain score.
+function formatScoreCell(row) {
+    if (row.score === null) {
+        return "Missing lab values";
+    }
+    if (row.isInserted) {
+        return row.score.toFixed(2);
+    }
+    return formatScoreWithPercentile(row.score, row.percentile);
 }
 
 // One <td> for the training-cohort "Outcome" column: a small muted tag
@@ -192,16 +248,21 @@ async function renderDisagreementScope() {
     });
 }
 
-// Renders the "Training cohort" scope: fetches (or reuses the cached)
-// /rankings rows for the current method, optionally hides null-score
-// rows, and fills in the table.
+// Renders the "Full transplant list" scope (internally still scope
+// "training" -- see activateScope/index.html, only the button's label
+// changed): fetches (or reuses the cached) /rankings rows for the
+// current method, merges in every activePatients entry at its computed
+// insertion rank, optionally hides null-score rows, and fills in the
+// table. The merge is entirely client-side -- no fetch beyond the one
+// loadTrainingRanking() call, and no recomputation of any training
+// row's own rank/score/percentile.
 async function renderTrainingScope() {
     rankingsStatus.textContent = "Loading rankings...";
     rankingsStatus.className = "hint";
 
-    let rows;
+    let trainingRows;
     try {
-        rows = await loadTrainingRanking(rankingsMethod);
+        trainingRows = await loadTrainingRanking(rankingsMethod);
     } catch (error) {
         rankingsStatus.textContent = "Could not load rankings: " + error.message;
         rankingsStatus.className = "hint status-error";
@@ -209,16 +270,27 @@ async function renderTrainingScope() {
     }
     rankingsStatus.textContent = "";
 
+    // Merge in every active-pool patient at its sorted position (never
+    // mutates the cached trainingRows array).
+    let rows = buildMergedRankedRows(trainingRows, rankingsMethod);
+
     if (hideMissingCheckbox.checked && rankingsMethod !== "ml") {
         rows = rows.filter(function (row) { return row.score !== null; });
     }
 
     renderTrainingTableHead();
-    rows.forEach(function (row) {
+    // Rank displayed is always this row's 1-based position in the final
+    // rendered array -- NOT row.rank / any training row's original
+    // backend-assigned rank, which is stale for every row at or below
+    // wherever a patient got inserted.
+    rows.forEach(function (row, position) {
         const tr = document.createElement("tr");
-        tr.appendChild(buildCell(String(row.rank)));
+        if (row.isInserted) {
+            tr.classList.add("inserted-patient");
+        }
+        tr.appendChild(buildCell(String(position + 1)));
         tr.appendChild(buildCell(row.patient_id));
-        tr.appendChild(buildCell(formatScoreWithPercentile(row.score, row.percentile)));
+        tr.appendChild(buildCell(formatScoreCell(row)));
         tr.appendChild(buildCell(row.age_at_baseline === null ? "n/a" : String(row.age_at_baseline)));
         tr.appendChild(buildCell(String(row.visit_count)));
         tr.appendChild(buildOutcomeCell(row.outcome));
@@ -227,9 +299,15 @@ async function renderTrainingScope() {
 }
 
 // Renders the "My active patients" scope: ranks the in-memory
-// activePatients array client-side by whichever method is selected --
-// no fetch at all.
-function renderActiveScope() {
+// activePatients array client-side by whichever method is selected, and
+// shows each patient's "Rank in full list" (buildMergedRankedRows()
+// against the training cohort -- the same helper renderTrainingScope
+// uses). That column needs the current method's training rows, which
+// this scope otherwise never fetches -- loadTrainingRanking() is a
+// no-op past the first call (cached in rankingsTrainingCache), so this
+// only ever hits the network once per method, same as every other
+// caller.
+async function renderActiveScope() {
     if (activePatients.length === 0) {
         rankingsStatus.textContent = "No active patients yet — go to Predict, score a patient, and click \"Add to active pool.\"";
         rankingsStatus.className = "hint";
@@ -238,10 +316,32 @@ function renderActiveScope() {
     }
     rankingsStatus.textContent = "";
 
+    let trainingRows = null;
+    try {
+        trainingRows = await loadTrainingRanking(rankingsMethod);
+    } catch (error) {
+        // "Rank in full list" just shows "—" below when trainingRows is
+        // null -- not fatal to the rest of this scope, which needs no
+        // backend data at all.
+    }
+
+    // Build the same merged, sorted full list renderTrainingScope shows,
+    // so each patient's "Rank in full list" is its 1-based position in
+    // that array -- accounting for every other active patient that also
+    // ranks above it, not just training rows.
+    const mergedRows = trainingRows ? buildMergedRankedRows(trainingRows, rankingsMethod) : null;
+
     // Pair each patient with its score for the current method, keeping
     // the original array index so a Remove click can splice() the right entry.
     let entries = activePatients.map(function (patient, index) {
-        return { patient: patient, index: index, score: activePatientScore(patient, rankingsMethod) };
+        const score = activePatientScore(patient, rankingsMethod);
+        const fullListRank = mergedRows ? mergedRows.findIndex(function (row) { return row.patient === patient; }) + 1 : 0;
+        return {
+            patient: patient,
+            index: index,
+            score: score,
+            fullListRank: fullListRank > 0 ? fullListRank : null,
+        };
     });
 
     if (hideMissingCheckbox.checked && rankingsMethod !== "ml") {
@@ -262,6 +362,7 @@ function renderActiveScope() {
         tr.appendChild(buildCell(String(position + 1)));
         tr.appendChild(buildCell(entry.patient.label));
         tr.appendChild(buildCell(entry.score === null ? "Missing lab values" : entry.score.toFixed(2)));
+        tr.appendChild(buildCell(entry.fullListRank === null ? "—" : String(entry.fullListRank)));
         tr.appendChild(buildCell(entry.patient.age_at_baseline === null ? "n/a" : String(entry.patient.age_at_baseline)));
         tr.appendChild(buildCell(String(entry.patient.visit_count)));
 
@@ -307,7 +408,7 @@ async function renderRankingsTable() {
     if (rankingsScope === "training") {
         await renderTrainingScope();
     } else if (rankingsScope === "active") {
-        renderActiveScope();
+        await renderActiveScope();
     } else {
         await renderDisagreementScope();
     }

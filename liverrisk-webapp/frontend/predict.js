@@ -210,12 +210,10 @@ function buildAddToPoolRow(result) {
     const row = document.createElement("div");
     row.className = "add-to-pool-row";
 
-    const defaultLabel = "Patient " + (activePatients.length + 1);
-
     const labelInput = document.createElement("input");
     labelInput.type = "text";
     labelInput.className = "add-to-pool-input";
-    labelInput.placeholder = defaultLabel;
+    labelInput.placeholder = "Patient " + (activePatients.length + 1);
     labelInput.setAttribute("aria-label", "Label for this patient in your active pool");
 
     const addButton = document.createElement("button");
@@ -225,6 +223,11 @@ function buildAddToPoolRow(result) {
 
     addButton.addEventListener("click", function () {
         const enteredLabel = labelInput.value.trim();
+        // Computed at click time, not build time -- several cards can sit
+        // unadded together (a multi-patient CSV), so activePatients.length
+        // at render time would give every one of them the same "Patient 1"
+        // fallback instead of counting up as they're actually added.
+        const defaultLabel = "Patient " + (activePatients.length + 1);
 
         activePatients.push({
             label: enteredLabel === "" ? defaultLabel : enteredLabel,
