@@ -206,14 +206,20 @@ function buildRiskExplanation(result) {
 // window.prompt()/confirm(), which some embedded browser contexts
 // (e.g. VS Code's Simple Browser) silently block, making a
 // prompt()-based button look like it does nothing at all.
-function buildAddToPoolRow(result) {
+// `index` is this card's 0-based position in the current upload batch
+// (from buildResultCard), not the pool's size -- using activePatients.length
+// here would give every card in a multi-patient CSV the same "Patient 1"
+// fallback, since none of them are in the pool yet when cards are built.
+function buildAddToPoolRow(result, index) {
     const row = document.createElement("div");
     row.className = "add-to-pool-row";
+
+    const defaultLabel = "Patient " + (index + 1);
 
     const labelInput = document.createElement("input");
     labelInput.type = "text";
     labelInput.className = "add-to-pool-input";
-    labelInput.placeholder = "Patient " + (activePatients.length + 1);
+    labelInput.placeholder = defaultLabel;
     labelInput.setAttribute("aria-label", "Label for this patient in your active pool");
 
     const addButton = document.createElement("button");
@@ -223,11 +229,6 @@ function buildAddToPoolRow(result) {
 
     addButton.addEventListener("click", function () {
         const enteredLabel = labelInput.value.trim();
-        // Computed at click time, not build time -- several cards can sit
-        // unadded together (a multi-patient CSV), so activePatients.length
-        // at render time would give every one of them the same "Patient 1"
-        // fallback instead of counting up as they're actually added.
-        const defaultLabel = "Patient " + (activePatients.length + 1);
 
         activePatients.push({
             label: enteredLabel === "" ? defaultLabel : enteredLabel,
@@ -314,7 +315,7 @@ function buildResultCard(result, index, total) {
 
     card.appendChild(buildRiskExplanation(result));
 
-    card.appendChild(buildAddToPoolRow(result));
+    card.appendChild(buildAddToPoolRow(result, index));
 
     return card;
 }
