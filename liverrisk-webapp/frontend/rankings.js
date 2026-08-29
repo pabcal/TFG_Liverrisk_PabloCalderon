@@ -49,6 +49,19 @@ function activePatientScore(patient, method) {
     return patient.weighted_risk;
 }
 
+// What fraction of the training cohort an inserted active-pool patient
+// ranks above, computed exactly the way the backend's percentile_le()
+// computes every training row's percentile (models_loader.py): the
+// percentage of reference scores <= this score, rounded to 1 decimal.
+function percentileAmongTraining(score, trainingRows) {
+    const scored = trainingRows.filter(function (row) { return row.score !== null; });
+    if (scored.length === 0) {
+        return null;
+    }
+    const countLE = scored.filter(function (row) { return row.score <= score; }).length;
+    return Math.round((countLE / scored.length) * 1000) / 10;
+}
+
 // Builds the full merged list -- every training row plus one row per
 // activePatients entry, inserted wherever its score sorts -- shared by
 // the "Full transplant list" table (renderTrainingScope) and the "My
@@ -66,7 +79,7 @@ function buildMergedRankedRows(trainingRows, method) {
         rows.push({
             patient_id: patient.label,
             score: score,
-            percentile: null,
+            percentile: score === null ? null : percentileAmongTraining(score, trainingRows),
             age_at_baseline: patient.age_at_baseline,
             visit_count: patient.visit_count,
             outcome: null,
@@ -167,19 +180,12 @@ function formatScoreWithPercentile(score, percentile) {
     return score.toFixed(2) + " (" + ordinal(percentile) + " percentile)";
 }
 
-// Score cell for one row in the "Full transplant list" table. Real
-// training rows get their backend-computed percentile; inserted
-// active-pool rows don't have one (computing a percentile would mean
-// building a whole reference distribution client-side, which is exactly
-// the "no new computation for training patients" this feature avoids),
-// so they just show the plain score.
+// Score cell for one row in the "Full transplant list" table. Training
+// rows carry their backend-computed percentile; inserted active-pool
+// rows get theirs from percentileAmongTraining() in
+// buildMergedRankedRows(), computed the same way -- so every row goes
+// through the same formatting helper.
 function formatScoreCell(row) {
-    if (row.score === null) {
-        return "Missing lab values";
-    }
-    if (row.isInserted) {
-        return row.score.toFixed(2);
-    }
     return formatScoreWithPercentile(row.score, row.percentile);
 }
 

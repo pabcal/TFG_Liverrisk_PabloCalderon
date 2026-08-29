@@ -3,7 +3,8 @@
 // ====================================================================
 const sampleStatus = document.querySelector("#sample-status");         // "Loading..." / error line above the cards
 const patientList = document.querySelector("#patient-list");           // container the patient cards are rendered into
-const csvPreview = document.querySelector("#csv-preview");             // read-only <textarea> showing the CSV so far
+const csvPreviewThead = document.querySelector("#csv-preview-thead");  // <thead> of the read-only table preview
+const csvPreviewTbody = document.querySelector("#csv-preview-tbody");  // <tbody> of the read-only table preview
 const csvPreviewHint = document.querySelector("#csv-preview-hint");    // "N patient(s) selected" line under the header
 const downloadCsvButton = document.querySelector("#download-csv-button"); // disabled until >=1 patient is checked
 
@@ -11,6 +12,11 @@ const downloadCsvButton = document.querySelector("#download-csv-button"); // dis
 // fetched, so every checkbox toggle can rebuild the CSV preview purely
 // client-side, with no repeated backend calls.
 let samplePatientsData = null;
+
+// Holds the exact CSV text for the current selection (built alongside
+// the table preview), so the download button always saves the real,
+// unmodified CSV rather than anything derived from the displayed table.
+let currentCsvText = "";
 
 
 // ====================================================================
@@ -127,6 +133,37 @@ function buildCsvText(columns, selectedPatients) {
     return lines.join("\n");
 }
 
+// Renders the same header/row data as buildCsvText(), but as a real
+// <table> for display: one <th> per column, missing values shown as
+// "--" instead of an empty stretch between commas.
+function renderCsvPreviewTable(columns, selectedPatients) {
+    csvPreviewThead.innerHTML = "";
+    csvPreviewTbody.innerHTML = "";
+
+    const headerRow = document.createElement("tr");
+    columns.forEach(function (col) {
+        const th = document.createElement("th");
+        th.textContent = col;
+        headerRow.appendChild(th);
+    });
+    csvPreviewThead.appendChild(headerRow);
+
+    selectedPatients.forEach(function (patient) {
+        const row = document.createElement("tr");
+        columns.forEach(function (col) {
+            const td = document.createElement("td");
+            const value = patient.raw[col];
+            const isMissing = value === null || value === undefined || value === "";
+            td.textContent = isMissing ? "--" : String(value);
+            if (isMissing) {
+                td.className = "missing-value";
+            }
+            row.appendChild(td);
+        });
+        csvPreviewTbody.appendChild(row);
+    });
+}
+
 // Rebuilds the CSV preview (and enables/disables the download button)
 // from the checkboxes currently checked. Entirely client-side: uses
 // the already-fetched samplePatientsData, no fetch() call here. Runs
@@ -141,13 +178,16 @@ function updateCsvPreview() {
     });
 
     if (selectedPatients.length === 0) {
-        csvPreview.value = "";
+        currentCsvText = "";
+        csvPreviewThead.innerHTML = "";
+        csvPreviewTbody.innerHTML = "";
         csvPreviewHint.textContent = "Select at least one patient above to build a file.";
         downloadCsvButton.disabled = true;
         return;
     }
 
-    csvPreview.value = buildCsvText(samplePatientsData.columns, selectedPatients);
+    currentCsvText = buildCsvText(samplePatientsData.columns, selectedPatients);
+    renderCsvPreviewTable(samplePatientsData.columns, selectedPatients);
     csvPreviewHint.textContent = selectedPatients.length + " patient(s) selected.";
     downloadCsvButton.disabled = false;
 }
@@ -157,10 +197,10 @@ function updateCsvPreview() {
 // SECTION: "Build a test CSV" tab -- download button
 // ====================================================================
 downloadCsvButton.addEventListener("click", function () {
-    // Build an in-memory file (Blob) from whatever text is currently
-    // in the preview -- no need to recompute it, the preview always
-    // mirrors the current selection.
-    const blob = new Blob([csvPreview.value], { type: "text/csv" });
+    // Build an in-memory file (Blob) from the current CSV text -- no
+    // need to recompute it, currentCsvText always mirrors the current
+    // selection (kept in sync with the table preview by updateCsvPreview).
+    const blob = new Blob([currentCsvText], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
 
     // Trigger a download by clicking a throwaway <a download> link;

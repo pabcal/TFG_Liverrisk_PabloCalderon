@@ -887,21 +887,31 @@ button:disabled {
     margin: 0.4rem 0;
 }
 
-/* Scrollable in both directions: overflow-x for long lines, the fixed
-   rows + native textarea overflow-y for many selected rows. */
-.csv-preview {
-    width: 100%;
-    box-sizing: border-box;
-    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+/* CSV preview table. Reuses .table-wrap/.rankings-table (see the
+   Rankings section above) for the horizontal-scroll wrapper, border,
+   and header styling, so the two tabs read as the same design system.
+   csv-preview-table only overrides what needs to differ: 287 columns
+   means cells stay compact and the whole thing also scrolls vertically
+   once many patients are selected, instead of stretching the page. */
+.csv-preview-wrap {
+    max-height: 26rem;
+    overflow-y: auto;
+}
+
+.csv-preview-table {
     font-size: 0.8rem;
-    background-color: #ffffff;
-    color: #1a1a1a;
-    border: 1px solid #c9c9c9;
-    border-radius: 3px;
-    padding: 1rem;
-    resize: vertical; /* user can drag it taller if many patients are selected */
-    overflow: auto;
-    white-space: pre; /* preserve the CSV's exact line breaks/spacing */
+}
+
+.csv-preview-table th,
+.csv-preview-table td {
+    padding: 0.45rem 0.65rem;
+}
+
+/* Missing values render as "--" (see renderCsvPreviewTable() in
+   build-csv.js) -- muted so a row of gaps reads as "no data" at a
+   glance instead of drawing the eye like real values do. */
+.csv-preview-table td.missing-value {
+    color: #999999;
 }
 
 

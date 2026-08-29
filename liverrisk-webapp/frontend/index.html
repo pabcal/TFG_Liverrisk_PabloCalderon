@@ -184,8 +184,16 @@
             </div>
             <!-- Shows "N patient(s) selected" once the preview has content -->
             <p id="csv-preview-hint" class="hint">Select at least one patient above to build a file.</p>
-            <!-- Read-only: display-only preview, not an editable field -->
-            <textarea id="csv-preview" class="csv-preview" readonly rows="8"></textarea>
+            <!-- Read-only, display-only preview of the CSV as a real table
+                 (287 columns -- scrolls horizontally within this wrapper
+                 instead of stretching the page). The actual downloadable
+                 CSV text is built separately in build-csv.js. -->
+            <div class="table-wrap csv-preview-wrap">
+                <table id="csv-preview-table" class="rankings-table csv-preview-table">
+                    <thead id="csv-preview-thead"></thead>
+                    <tbody id="csv-preview-tbody"></tbody>
+                </table>
+            </div>
         </section>
 
         <!-- ============================================================
