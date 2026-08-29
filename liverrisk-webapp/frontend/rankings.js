@@ -399,11 +399,10 @@ async function renderRankingsTable() {
     const isDisagreement = rankingsScope === "disagreement";
     methodToggleGroup.classList.toggle("hidden", isDisagreement);
     disagreementFormulaGroup.classList.toggle("hidden", !isDisagreement);
-    disagreementCaption.classList.toggle("hidden", !isDisagreement);
-    if (isDisagreement) {
-        disagreementCaption.textContent =
-            "Positive gap = ML flags this patient as more urgent than " + methodLabel(rankingsFormula) + "; negative = the reverse.";
-    }
+    //if (isDisagreement) {
+    //    disagreementCaption.textContent =
+    //        "Positive gap = ML flags this patient as more urgent than " + methodLabel(rankingsFormula) + "; negative = the reverse.";
+    //}
 
     if (rankingsScope === "training") {
         await renderTrainingScope();
