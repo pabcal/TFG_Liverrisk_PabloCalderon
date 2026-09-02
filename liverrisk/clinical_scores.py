@@ -1,25 +1,10 @@
-"""
-Standalone clinical risk-score formulas.
-
-fib4() is extracted from the FIB-4 calculations that used to be inline
-inside build_patient_features() in the original notebook
-(ANNITIA_baseline_local.ipynb) -- same formula, same inputs, now defined
-once here instead of being repeated per visit and for the first/last
-summaries. features.py calls this function; the numeric result is
-unchanged.
-
-apri() is NEW: it was not present anywhere in the original notebook. It's
-added only because the target package structure asked for a
-clinical_scores.py with fib4 + apri -- build_patient_features() has NOT
-been changed to use it, so model behavior is unaffected. Flagging this so
-it isn't mistaken for moved logic. APRI requires an AST upper-limit-of-
-normal (ULN), which isn't in the dataset; the default of 40 U/L is a
-common lab convention, not a value derived from this cohort.
-"""
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+
+
+#Clinical score formulas (APRI, FIB4)
 
 
 def _safe_div(a, b):

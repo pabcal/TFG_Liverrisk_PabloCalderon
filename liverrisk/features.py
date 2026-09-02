@@ -1,20 +1,3 @@
-"""
-Longitudinal feature engineering and survival-target preparation.
-
-Moved verbatim (not rewritten) from ANNITIA_baseline_local.ipynb sections
-4.3-4.9: get_age_cols, visit_cols, safe_div, first_non_null, last_non_null,
-slope_against_age, age_of_last_measure, span_years_for_measure,
-add_visit_level_features, build_patient_features, prepare_survival_target.
-
-The only intentional behavior-preserving change: the three inline FIB-4
-computations (per-visit, first, last) now call clinical_scores.fib4()
-instead of repeating `safe_div(age * ast, plt * np.sqrt(alt))` -- same
-formula, same result, single definition.
-
-save_features()/load_features() and the feature_columns.json writer are
-NEW, added for the notebook -> package split (01_data_exploration writes,
-everything downstream reads).
-"""
 from __future__ import annotations
 
 import json

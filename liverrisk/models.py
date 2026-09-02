@@ -1,30 +1,4 @@
 """
-Model pipeline factories, moved verbatim from ANNITIA_baseline_local.ipynb
-sections 4.10-4.13: split_feature_types, make_preprocessor,
-make_coxnet_pipeline, fit_coxnet_with_alpha_cv, make_rsf_pipeline,
-signed_time_label, make_xgb_pipeline. Also home to the two hyperparameter
-searches 02_grid_search.ipynb runs: search_coxnet_l1_ratio and
-search_xgb_hyperparams.
-
-fit_coxnet_with_alpha_cv's (n_alphas, n_splits) come from
-liverrisk.config by default instead of being hardcoded literals. Passing
-them explicitly (as 02_grid_search.ipynb must, per the requirement that
-grid search never reads config mid-search) reproduces the exact original
-defaults, since config falls back to those same literals when
-best_config.json doesn't exist yet -- see config.DEFAULTS.
-
-make_xgb_pipeline and make_coxnet_pipeline do NOT read config themselves.
-XGB hyperparameters and Coxnet l1_ratio are tuned per endpoint
-(config.xgb_hyperparams_hep()/_death(), config.coxnet_l1_ratio_hep()/
-_death()), and neither factory knows which endpoint it's being called
-for -- every caller (cv.py, scripts/train.py, this module's own search
-functions) must explicitly pass the right endpoint's values in. This
-replaced an earlier version where make_xgb_pipeline silently defaulted to
-a single shared config.xgb_hyperparams(), which made it easy to lose
-track of which endpoint a given fit actually used.
-
-
-
 Where the 3 models get defined. The preprocessing they use, the hyperpareameters, structure
 
 I use functions like these instead of one fixed model object because the same model gets fit
@@ -34,8 +8,6 @@ Calling make_coxnet_pipeline(X) 15 times during cross-validation, gets me 15 ind
 pipelines, not one pipeline re fitting on top of itself. Reusing weights carries over knowledge from previous folds,
  causes data leakage that inflates your performance metrics and leads to overfitting. So this way is better
 """
-
-
 from __future__ import annotations
 
 import numpy as np
@@ -150,24 +122,6 @@ def make_coxnet_pipeline(X: pd.DataFrame, l1_ratio: float = 0.9) -> Pipeline:
 def search_coxnet_l1_ratio(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarray,
                             l1_ratios: list[float] | None = None,
                             n_repeats: int = 1) -> tuple[float, float, pd.DataFrame]:
-    """
-    Sweeps Coxnet's l1_ratio, scoring each candidate with cv_cindex_coxnet
-    (alpha itself is left alone -- fit_coxnet_with_alpha_cv already tunes
-    alpha per fit, and re-tuning it inside this search too would multiply
-    the cost for no benefit).
-
-    `time` is accepted but unused -- kept only so this search's call
-    signature matches search_xgb_hyperparams's (X, y, event, time), which
-    does need `time` (for signed_time_label) but not `y`.
-
-    Returns (best_l1_ratio, best_mean_cindex, results_df), sorted
-    best-first, same shape as search_blend_weights. Does not write
-    anywhere -- the caller (02_grid_search.ipynb) persists the winner via
-    config.update_config(coxnet_hyperparams=...).
-
-    Tries several candidate l1_ratio values, scores each with cross-validation, returns 
-    whichever performed best. This is what produces the tuned 0.1 (hepatic) / 0.99 (death) values
-    """
     del time
 
     # mutable defaults (like lists) can behave unexpectedly if used directly as a default value
@@ -192,21 +146,6 @@ def search_coxnet_l1_ratio(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarr
 def fit_coxnet_with_alpha_cv(X: pd.DataFrame, y, random_state: int = RANDOM_STATE,
                               n_alphas: int | None = None, n_splits: int | None = None,
                               l1_ratio: float = 0.9) -> Pipeline:
-    """
-    Like the baseline, first fit an alpha path, then select the best alpha.
-    This usually works better than leaving the full path inside predict().
-
-    Speed: the full alpha path from Coxnet can have ~100 alphas. Grid-searching
-    all of them re-fits the (alpha-independent) preprocessing pipeline every
-    time, which dominates runtime. We instead:
-      1. Fit the preprocessor once and reuse the transformed features across
-         all alpha/fold combinations.
-      2. Evenly subsample the alpha path down to `n_alphas` candidates, which
-         still spans the same regularization range at much lower cost.
-
-    `n_alphas`/`n_splits` default to config.coxnet_alpha_search() (30/3,
-    same as the original hardcoded defaults) if not passed explicitly.
-    """
 
     #loads from best config in case the function is called without one of the params
     if n_alphas is None or n_splits is None:
@@ -296,15 +235,7 @@ def signed_time_label(event: np.ndarray, time: np.ndarray) -> np.ndarray:
 
 
 def make_xgb_pipeline(X: pd.DataFrame, **hyperparam_overrides) -> Pipeline:
-    """
-    Takes XGBRegressor kwargs only via `hyperparam_overrides` -- there is no
-    internal config fallback. Callers that want the tuned per-endpoint
-    values must pass them explicitly, e.g.
-    `make_xgb_pipeline(X_hep, **config.xgb_hyperparams_hep())`. Passing
-    nothing falls through to xgboost's own defaults, not the tuned ones --
-    this is deliberate, so it's never ambiguous which endpoint's
-    hyperparameters a given fit used.
-    """
+
     if not HAS_XGB:
         raise ImportError("xgboost is not installed.")
 
@@ -323,23 +254,7 @@ def make_xgb_pipeline(X: pd.DataFrame, **hyperparam_overrides) -> Pipeline:
 def search_xgb_hyperparams(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarray,
                             n_candidates: int = 12,
                             random_state: int = RANDOM_STATE) -> tuple[dict, float, pd.DataFrame]:
-    """
-    Randomly samples `n_candidates` distinct combinations from a bounded
-    grid (learning_rate, max_depth, n_estimators, min_child_weight,
-    subsample, colsample_bytree, reg_lambda, reg_alpha) and scores each
-    with cv_cindex_xgb (n_repeats=1, to keep the search affordable -- same
-    trade-off search_blend_weights makes).
 
-    `y` is accepted but unused -- kept only so this search's call signature
-    matches search_coxnet_l1_ratio's (X, y, event, time), which needs `y`
-    but not `time`.
-
-    Returns (best_params, best_mean_cindex, results_df) where best_params
-    is the FULL 8-key dict (never a partial one) so it can be passed
-    straight to config.update_config(xgb_hyperparams_hep=...) /
-    (xgb_hyperparams_death=...) without a shallow-merge accidentally
-    dropping keys. Does not write anywhere itself.
-    """
     del y
 
     if not HAS_XGB:

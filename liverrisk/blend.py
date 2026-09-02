@@ -1,18 +1,3 @@
-"""
-Prediction blending, moved verbatim from ANNITIA_baseline_local.ipynb
-sections 4.14b and 4.15: search_blend_weights, rank_normalize,
-blend_predictions.
-
-search_blend_weights() itself does NOT write to best_config.json -- it
-just returns (best_weights, best_mean, results_df), same as in the
-notebook. Writing the winner back to disk is done by the *caller*
-(02_grid_search.ipynb), via `config.update_config(blend_weights_hep=...)`
-/ `update_config(blend_weights_death=...)`, one explicit call per
-endpoint, right after each search. Keeping the file write out of this
-module keeps it a pure/testable function and keeps the "when do we
-persist tuning results" decision visible in the notebook that runs the
-search, rather than hidden as a side effect.
-"""
 from __future__ import annotations
 
 import numpy as np
@@ -75,29 +60,6 @@ def blend_predictions(predictions: list[np.ndarray], weights: list[float] | None
 def search_blend_weights(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarray,
                           n_points: int = 6,
                           xgb_params: dict | None = None) -> tuple[tuple[float, float, float], float, pd.DataFrame]:
-    """
-    Grid-search rank-blend weights (w_cox, w_rsf, w_xgb) that sum to 1,
-    scoring each candidate with cv_cindex_blend.
-
-    Explicitly includes edge cases where one or two weights are 0 (e.g.
-    pure RSF, or RSF+XGB with no Coxnet) -- the best blend for a given
-    endpoint isn't guaranteed to use all three models.
-
-    Every candidate is scored with n_repeats=1 and rsf_n_estimators=150
-    (both passed through to cv_cindex_blend) to keep the grid affordable.
-    These scores are for *ranking* candidates against each other; re-score
-    the winning weights with more repeats separately for a trustworthy
-    final number.
-
-    `xgb_params` is forwarded straight to cv_cindex_blend, which requires
-    it explicitly whenever xgboost is installed -- pass whichever
-    endpoint's config.xgb_hyperparams_hep()/_death() matches this `X`.
-
-    Returns (best_weights, best_mean_cindex, results_df) where results_df
-    has every candidate sorted best-first, for inspection. Does not write
-    anywhere -- see module docstring.
-    """
-
     # n_points evenly spaced numbers from 0 to 1.0
     grid_vals = np.linspace(0.0, 1.0, n_points)
 
@@ -138,11 +100,6 @@ def search_blend_weights(X: pd.DataFrame, y, event: np.ndarray, time: np.ndarray
 
     # after building the table, sort and grab the top row.
 
-    """
-    CAMBIAR:
-    Interesting: this one doesn't have the dtype-upcasting protection search_xgb_hyperparams used — but that protection was specifically needed because XGB's hyperparameters mix integers (max_depth) and floats (learning_rate). Here, all three weights are already floats to begin with, so reading them back via .iloc[0] and wrapping in float(...) is safe
-    
-    """
     results_df = pd.DataFrame(rows).sort_values("mean", ascending=False).reset_index(drop=True)
     best = results_df.iloc[0]
     best_weights = (float(best["w_cox"]), float(best["w_rsf"]), float(best["w_xgb"]))

@@ -1,29 +1,4 @@
 """
-Single source of truth for tuned values (per-endpoint XGB hyperparameters,
-per-endpoint Coxnet l1_ratio, Coxnet alpha search settings, per-endpoint
-blend weights).
-
-Loads liverrisk/best_config.json once at import time. If the file is
-missing, falls back to DEFAULTS -- the values that were hardcoded directly
-in the original notebook (make_xgb_pipeline's XGBRegressor kwargs,
-make_coxnet_pipeline's l1_ratio, fit_coxnet_with_alpha_cv's
-n_alphas/n_splits, and the pre-tuning OLD_BLEND_WEIGHTS = (0.45, 0.25,
-0.30) used for both endpoints) -- so the package works before
-02_grid_search.ipynb has ever been run.
-
-XGB hyperparameters and Coxnet l1_ratio are stored per endpoint
-(xgb_hyperparams_hep/_death, coxnet_hyperparams's l1_ratio_hep/_death) --
-there is deliberately no shared/unsplit fallback key for either. Every
-caller that builds an XGB or l1_ratio-tuned Coxnet model must explicitly
-pick the hep or death reader; make_xgb_pipeline/make_coxnet_pipeline never
-guess which endpoint they're being used for.
-
-02_grid_search.ipynb is the only notebook that calls save_config() /
-update_config(); everything else (models.py, cv.py, 03_train_final,
-scripts/train.py) only reads.
-
-
-
 its one single file that contains all the tuned values. Everything else reads from it 
 so it never has its own copy, only this copy exists.
 
