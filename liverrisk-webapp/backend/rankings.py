@@ -49,6 +49,9 @@ _train_patient_ids = _raw_train_df.loc[X_HEP.index, "patient_id_anon"]
 _train_visit_counts = _raw_train_df.loc[X_HEP.index, AGE_COLUMNS].notna().sum(axis=1)
 
 
+# --------------------------------------------------------------------
+# Building one training-cohort ranking table
+# --------------------------------------------------------------------
 def build_training_ranking_rows(method: str) -> list[dict]:
     """
     Builds one training-cohort ranking table (all ~1253 X_HEP
@@ -104,6 +107,11 @@ def build_training_ranking_rows(method: str) -> list[dict]:
     return rows
 
 
+# --------------------------------------------------------------------
+# Computed once at startup: all three methods' tables never change
+# while the server is running, so every /rankings call just reads
+# from here instead of rebuilding a table per request.
+# --------------------------------------------------------------------
 TRAINING_RANKINGS = {
     "ml": build_training_ranking_rows("ml"),
     "fib4": build_training_ranking_rows("fib4"),
@@ -111,6 +119,9 @@ TRAINING_RANKINGS = {
 }
 
 
+# --------------------------------------------------------------------
+# The one API endpoint
+# --------------------------------------------------------------------
 @router.get("/rankings")
 async def rankings(method: str = "ml", scope: str = "training"):
     """

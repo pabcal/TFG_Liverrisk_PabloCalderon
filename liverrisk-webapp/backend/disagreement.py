@@ -24,6 +24,9 @@ router = APIRouter()
 OUTPUTS_DIR = REPO_ROOT / "outputs"
 
 
+# --------------------------------------------------------------------
+# Loading the precomputed disagreement tables
+# --------------------------------------------------------------------
 def _load_disagreement_csv(path: Path) -> pd.DataFrame:
     """
     Loads one ranking_comparison_*.csv, restricted to what this route
@@ -53,12 +56,20 @@ def _load_disagreement_csv(path: Path) -> pd.DataFrame:
     return df
 
 
+# --------------------------------------------------------------------
+# Computed once at startup: both formulas' tables never change while
+# the server is running, so every /disagreement call just reads from
+# here instead of re-reading the CSVs per request.
+# --------------------------------------------------------------------
 DISAGREEMENT_DATA = {
     "fib4": _load_disagreement_csv(OUTPUTS_DIR / "ranking_comparison_fib4.csv"),
     "apri": _load_disagreement_csv(OUTPUTS_DIR / "ranking_comparison_apri.csv"),
 }
 
 
+# --------------------------------------------------------------------
+# Helpers for inserting a new (just-scored) patient into the static rows
+# --------------------------------------------------------------------
 def _insert_and_rank(new_score: float, train_scores: pd.Series) -> int:
     """
     Where would new_score rank (1 = highest score = most urgent) if
@@ -86,6 +97,9 @@ def _row_dict(row: pd.Series) -> dict:
     }
 
 
+# --------------------------------------------------------------------
+# The one API endpoint
+# --------------------------------------------------------------------
 @router.get("/disagreement")
 async def disagreement(
     formula: str,

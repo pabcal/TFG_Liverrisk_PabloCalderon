@@ -385,7 +385,8 @@
             </div>
             <ul class="bullet-list">
                 <li><strong>Weighted concordance index: 0.849</strong> &mdash; the official metric set by ANNITIA and IHU ICAN (70% hepatic event ranking accuracy, 30% mortality), evaluated with cross validation so every patient is scored only by a model that never saw them during training.</li>
-                <li><strong>Benchmarked against real clinical formulas, </strong>not just &ldquo; the ML score is higher.&rdquo; A bootstrap resampling analysis (1,000 resamples) was used to test whether the model's advantage over FIB-4 and APRI is actually real and not a result of chance.
+                <li><strong>Benchmarked against real clinical formulas, </strong>not just &ldquo; the ML score is higher.&rdquo; A bootstrap resampling analysis (1,000 resamples) was used to test whether the model's advantage over FIB-4 and APRI is actually real and not a result of chance.  On the official weighted score, the
+                            ensemble reached 0.849, compared to 0.768 for FIB-4 and 0.671 for APRI.
             </ul>
             <div class="chart-stack">
                 <img src="images/feature_importance_hepatic.png" alt="Top features by permutation importance, hepatic event model" class="about-chart">

@@ -24,8 +24,11 @@ router = APIRouter()
 
 TEST_COLUMNS = pd.read_csv(RAW_TEST_PATH, nrows=0).columns.tolist()
 
-# The three "NIT" (non-invasive test) repeated measures in the dataset,
-# in the same order they appear as REPEATED_BASES entries in features.py.
+# --------------------------------------------------------------------
+# The three "NIT" (non-invasive test) repeated measures shown in each
+# sample patient's summary, in the same order they appear as
+# REPEATED_BASES entries in features.py.
+# --------------------------------------------------------------------
 NIT_BASES = ["fibrotest_BM_2", "aixp_aix_result_BM_3", "fibs_stiffness_med_BM_1"]
 NIT_LABELS = {
     "fibrotest_BM_2": "FibroTest",
@@ -42,6 +45,9 @@ def _visit_columns(columns: list[str], base: str) -> list[str]:
 NIT_COLUMNS = {base: _visit_columns(TEST_COLUMNS, base) for base in NIT_BASES}
 
 
+# --------------------------------------------------------------------
+# Picking a varied set of sample patients
+# --------------------------------------------------------------------
 def _pick_evenly_spaced(sorted_index: pd.Index, n: int) -> list:
     """
     Given an index already sorted by the ranking criterion, picks `n`
@@ -121,6 +127,9 @@ def select_sample_patients(raw_df: pd.DataFrame, n: int = 10) -> pd.DataFrame:
     return raw_df.loc[chosen_idx]
 
 
+# --------------------------------------------------------------------
+# The one API endpoint
+# --------------------------------------------------------------------
 @router.get("/sample-patients")
 async def sample_patients():
     """
