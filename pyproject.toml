@@ -1,0 +1,19 @@
+[project]
+name = "tfg-pablocalderon"
+version = "0.1.0"
+description = "LiverRisk: A Survival Analysis Approach to MASLD Risk Prediction"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy",
+    "pandas",
+    "pyarrow",
+    "scikit-learn==1.8.0",
+    "scikit-survival",
+    "joblib",
+    "xgboost",
+    "shap",
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+]
