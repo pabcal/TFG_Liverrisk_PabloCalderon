@@ -32,8 +32,6 @@ Full setup instructions, including how to regenerate everything from scratch, ar
 - `notebooks/` The full pipeline, from raw data to final trained models, in order.
 - `models/` The trained models, already fitted and ready to use.
 - `liverrisk-webapp/` The web application, backend and frontend together.
-- `exploratory_work/` Early exploration and testing from before the final approach was chosen. Kept here for transparency, not meant to represent the final methodology.
-
 ## Why this approach
 
 Most of what makes this project different comes down to one idea. A patient is not a single number measured once. A patient's condition moves over time, and that movement carries real information. Formulas like FIB-4 cannot see that movement, since they only ever look at one visit at a time. This project was built specifically to capture it.
